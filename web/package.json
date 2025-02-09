@@ -1,0 +1,26 @@
+{
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite --host",
+		"build": "vite build",
+		"preview": "vite preview"
+	},
+	"dependencies": {
+		"@ikoz/vite-plugin-preact-esp32": "^0.1.0",
+		"preact": "^10.25.3",
+		"preact-iso": "^2.9.0"
+	},
+	"devDependencies": {
+		"@preact/preset-vite": "^2.9.3",
+		"@types/node": "^22.13.1",
+		"eslint": "^8.57.1",
+		"eslint-config-preact": "^1.5.0",
+		"typescript": "^5.7.3",
+		"vite": "^4.x",
+		"vite-plugin-json-server": "^0.1.1"
+	},
+	"eslintConfig": {
+		"extends": "preact"
+	}
+}
