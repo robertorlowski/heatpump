@@ -46,13 +46,14 @@ h4, h5 {
 
 .resource {
 	padding: 0.75rem 1.5rem;
-	min-width:50rem;
 	border-radius: 0.5rem;
 	text-align: left;
 	text-decoration: none;
 	color: #222;
 	background-color: #f1f1f1;
 	border: 1px solid transparent;
+	margin-left: 1rem;
+	margin-right: 1rem;
 }
 
 .resource:hover {
@@ -105,24 +106,41 @@ th, td {
     align-items: flex-start;
 }
 
+/* @media (max-width: 639px) {
+	.hp-data {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+	}
+} */
+
+
 .heat {
 	display: flex;
 }
 
 .heat.body {
 	display: flex;
+}
 
+/* @media (max-width: 639px) {
+	.heat.body {
+		display: flex;
+		flex-direction: column;
+		flex-wrap: wrap;
+        align-content: center;
+	}
+} */
 
 .heat.table {
-	width: 100%;
 	display: flex;
-	min-width: 100px;
 	align-items: center;
-}
+
 }
 
 .heat.footer,
 .heat.head {
+	min-width: 300px;
     display: flex;	
     height: 2rem;
     align-content: center;
@@ -135,20 +153,9 @@ img.field {
 	width: 20px;
 }
 
-@media (max-width: 639px) {
+/* @media (max-width: 639px) {
 	.settings section {
-		margin-top: 5rem;
+		margin-top: 3rem;
 		grid-template-columns: 1fr;
-		row-gap: 1rem;
 	}
-}
-
-@media (prefers-color-scheme: dark) {
-	.resource {
-		color: #ccc;
-		background-color: #161616;
-	}
-	.resource:hover {
-		border: 1px solid #bbb;
-	}
-}
+} */

@@ -307,9 +307,9 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, DateTime rtcTime, JsonDocument hp
     displayRow(tft, xx++, 1, "E.dt:", jsonAsString(hp["EEV_dt"]));
 
     displayRow(tft, xx, 0, "E.ps:", jsonAsString(hp["EEV_pos"]));
-    displayRow(tft, xx++, 1, "HP.s:", hp["HPS"]  ? "ON" : "OFF");
+    displayRow(tft, xx++, 1, "HP.s:", hp["HPS"].isNull() ? "" : hp["HPS"]  ? "ON" : "OFF");
  
-    displayRow(tft, xx, 0, "HC.s:", hp["HCS"] ? "ON" : "OFF");
-    displayRow(tft, xx++, 1, "CC.s:", hp["CCS"] ? "ON" : "OFF");
+    displayRow(tft, xx, 0, "HC.s:",  hp["HCS"].isNull() ? "" : hp["HCS"] ? "ON" : "OFF");
+    displayRow(tft, xx++, 1, "CC.s:", hp["CCS"].isNull() ? "" : hp["CCS"] ? "ON" : "OFF");
   }
 }

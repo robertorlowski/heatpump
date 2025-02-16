@@ -54,21 +54,21 @@ export default class HP extends Component<{}, IState> {
 								</div>
 							</div>
 							<div class="heat body">
-							<table class="heat table" style="width: 25%;">
+							<table class="heat table" style="width: 30	%;">
 									<thead></thead>
 									<tbody>
 										<tr class="left">
-											<td class ="label">CO:</td>
+											<td class ="label" style="min-width: 80px;">CO:</td>
 											<td>
-												{_hp.CO == undefined ? "---" : 
+												{_hp.CO == undefined ? "--" : 
 													<img title="CO" src={ _hp.CO ? swith_on : swith_off}/>
 												}
 											</td>
 										</tr>
 										<tr class="left">
-											<td class ="label">CWU:</td>
+											<td class ="label" style="min-width: 80px;">CWU:</td>
 											<td>
-												{_hp.CWU == undefined ? "---" : 
+												{_hp.CWU == undefined ? "--" : 
 													<img title="CWU" src={ _hp.CWU ? swith_on : swith_off}/>
 												}
 											</td>
@@ -76,7 +76,7 @@ export default class HP extends Component<{}, IState> {
 									</tbody>
 									<tfoot></tfoot>													
 								</table>
-								<table class="heat table" style="width: 50%; font-size: 32px; justify-content: center;">
+								<table class="heat table" style="width: 40%; font-size: 32px; justify-content: center;">
 									<thead></thead>
 									<tbody>
 										<tr>
@@ -95,7 +95,7 @@ export default class HP extends Component<{}, IState> {
 									</tbody>
 									<tfoot></tfoot>													
 								</table>
-								<table class="heat table" style="width: 25%;">
+								<table class="heat table" style="width: 30%;">
 									<thead></thead>
 									<tbody>
 										<tr class="left">
@@ -147,56 +147,78 @@ export default class HP extends Component<{}, IState> {
 										<td class ="label">Temp. CO:</td>
 										<td className= {(_hp.Ttarget > _hp.Tmin && _hp.Ttarget < _hp.Tmax)
 											? `field correct` : `field incorrect`}>{_hp.Ttarget}</td>
+									</tr> */}
+									<tr>
+										<td class ="label">Temp. CO min:</td>
+										<td class="field">{_hp.Tmin ?_hp.Tmin : "---"}</td>
+									</tr>
+									<tr>
+										<td class ="label">Temp. CWU min:</td>
+										<td class="field">{_hp.Tcwu_min ?_hp.Tcwu_min : "---"}</td>
+									</tr>
+									<tr>
+										<td class ="label">Temp. BE</td>
+										<td className= {(_hp.Tbe < 0) ? `field incorrect` : `field `}>{_hp.Tbe ?_hp.Tbe : "---"}</td>
+									</tr>
+									<tr>
+										<td class ="label">Temp. cold out:</td>
+										<td className= {(_hp.Tco < 0) ? `field incorrect` : `field `}>{_hp.Tco ?_hp.Tco : "---"}</td>									
+									</tr>	
+									<tr>
+										<td class ="label">Temp. comp.:</td>
+										<td class="field">{_hp.Tsump ?_hp.Tsump : "---"}</td>
+									</tr>
+									<tr>
+										<td class ="label">EEV dt:</td>
+										<td class="field">{_hp.EEV_dt ?_hp.EEV_dt : "---"}</td>
+									</tr>
+									<tr>
+										<td class ="label">EEV position:</td>
+										<td class="field">{_hp.EEV_pos ?_hp.EEV_pos : "---"}</td>
+									</tr>	
+								</tbody>
+								<tfoot></tfoot>													
+							</table>
+							<table>
+								<thead></thead>
+								<tbody>
+									{/* <tr>
 										<td class ="label">Temp. CWU:</td>
 										<td className= {(_hp.Tcwu > _hp.Tcwu_min && _hp.Tcwu < _hp.Tcwu_max)
 											? `field correct` : `field incorrect`}>{_hp.Tcwu}</td>
 									</tr> */}
 									<tr>
-										<td class ="label">Temp. CO min:</td>
-										<td class="field">{_hp.Tmin ?_hp.Tmin : "---"}</td>
 										<td class ="label">Temp. CO max:</td>
 										<td class="field">{_hp.Tmax ?_hp.Tmax : "---"}</td>
 									</tr>
 									<tr>
-										<td class ="label">Temp. CWU min:</td>
-										<td class="field">{_hp.Tcwu_min ?_hp.Tcwu_min : "---"}</td>
 										<td class ="label">Temp CWU max:</td>
 										<td class="field">{_hp.Tcwu_max ?_hp.Tcwu_max : "---"}</td>
 									</tr>
 									<tr>
-										<td class ="label">Temp. BE</td>
-										<td className= {(_hp.Tbe < 0) ? `field incorrect` : `field `}>{_hp.Tbe ?_hp.Tbe : "---"}</td>
 										<td class ="label">Temp. AE:</td>
 										<td className= {(_hp.Tae < 0) ? `field incorrect` : `field `}>{_hp.Tae ?_hp.Tae : "---"}</td>
 									</tr>
 									<tr>
-										<td class ="label">Temp. cold out:</td>
-										<td className= {(_hp.Tco < 0) ? `field incorrect` : `field `}>{_hp.Tco ?_hp.Tco : "---"}</td>									
 										<td class ="label">Temp. hot out:</td>
 										<td class="field">{_hp.Tho ?_hp.Tho : "---"}</td>
 									</tr>	
 									<tr>
-										<td class ="label">Temp. comp.:</td>
-										<td class="field">{_hp.Tsump ?_hp.Tsump : "---"}</td>
 										<td class ="label">Watts:</td>
 										<td class="field">{_hp.Watts ?_hp.Watts : "---"}</td>
 									</tr>
 									<tr>
-										<td class ="label">EEV dt:</td>
-										<td class="field">{_hp.EEV_dt ?_hp.EEV_dt : "---"}</td>
 										<td class ="label">EEV temp.:</td>
 										<td class="field">{_hp.EEV ?_hp.EEV : "---"}</td>
 									</tr>
 									<tr>
-										<td class ="label">EEV position:</td>
-										<td class="field">{_hp.EEV_pos ?_hp.EEV_pos : "---"}</td>
 										<td class ="label"></td>
 										<td class="field"></td>
-
 									</tr>	
 								</tbody>
 								<tfoot></tfoot>													
 							</table>
+
 							<table>
 								<thead></thead>
 								<tbody>

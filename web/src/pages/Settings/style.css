@@ -24,13 +24,14 @@ h3 {
 }
 
 .resource {
-	padding: 0.75rem 1.5rem;
 	border-radius: 0.5rem;
 	text-align: left;
 	text-decoration: none;
 	color: #222;
 	background-color: #f1f1f1;
 	border: 1px solid transparent;
+	margin-left: 1rem;
+	margin-right: 1rem;
 }
 
 .resource:hover {
@@ -55,20 +56,8 @@ h3 {
 	display: none;
 }
 
-@media (max-width: 639px) {
+/* @media (max-width: 639px) {
 	.settings section {
-		margin-top: 5rem;
+		margin-top: 3rem;
 		grid-template-columns: 1fr;
-		row-gap: 1rem;
-	}
-}
-
-@media (prefers-color-scheme: dark) {
-	.resource {
-		color: #ccc;
-		background-color: #161616;
-	}
-	.resource:hover {
-		border: 1px solid #bbb;
-	}
-}
+} */

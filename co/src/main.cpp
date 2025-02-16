@@ -391,8 +391,6 @@ void serverRoute(void) {
         server.send(405, "text/plain", "Method Not Allowed");
         return;
       }
-      
-      printSerial(server.arg("plain"));
 
       JsonDocument doc;
       DeserializationError error = deserializeJson(doc, server.arg("plain"));
