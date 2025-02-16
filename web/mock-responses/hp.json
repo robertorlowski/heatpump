@@ -15,23 +15,18 @@
     "Watts": "72",
     "EEV": "2.0",
     "EEV_pos": "50",
-    "HCS": "0",
-    "CCS": "0",
-    "HPS": "0",
-    "F": "0",
-    "CWUS": "0",
-    "CWU": "1",
-    "CO": "1"
+    "HCS": 0,
+    "CCS": 0,
+    "HPS": 0,
+    "F": 0,
+    "CWUS": 0,
+    "CWU": 1,
+    "CO": 1
   },
-    "PV": {
-    "total_power": 483,
-    "total_prod": 3839,
-    "total_prod_today": 20,
-	  "temperature":-1
-  },
-  "time": "2025.02.08 08:30:10",
-  "co_pomp": false,
+  "PV": {},
+  "time": "2025.02.16 01:00:46",
+  "co_pomp": true,
   "pv_power": false,
-  "schedule_on": false,
-  "work_mode": "PV"
+  "schedule_on": true,
+  "work_mode": "M"
 }

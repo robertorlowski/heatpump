@@ -168,5 +168,4 @@ template <>
       return true;
     }
   };
-
 }

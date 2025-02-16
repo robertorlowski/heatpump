@@ -9,6 +9,7 @@
 // https://github.com/isaackoz/vite-plugin-preact-esp32
 #include <WebServer.h>
 
+
 #define PV_DEVICE_ID 0x69
 #define PV_count 5
 #define HP_FORCE_ON 2000
@@ -48,6 +49,8 @@ long _getPVData(uint8_t pv_nr, char *inData, uint8_t b_start, uint8_t b_count);
 void collectDataFromPV(char inData[1024]);
 void sendRequest(SERIAL_OPERATION so);
 void collectDataFromSerial();
+void serverRoute(void);
+void forceRefresh(void);
 
 // main
 void setup()
@@ -71,23 +74,7 @@ void setup()
   jsonDocument["HP"] = emptyDoc;
   jsonDocument["PV"] = emptyDoc;
 
-  server.on("/", []
-    {
-      server.sendHeader("Content-Encoding", "gzip");
-      server.send_P(200, "text/html", (const char *)static_files::f_index_html_contents, static_files::f_index_html_size); 
-    }
-  );
-
-  // Create a route handler for each of the build artifacts
-  for (int i = 0; i < static_files::num_of_files; i++)
-  {
-    server.on(static_files::files[i].path, [i]
-        {
-          server.sendHeader("Content-Encoding", "gzip");
-          server.send_P(200, static_files::files[i].type, (const char *)static_files::files[i].contents, static_files::files[i].size); 
-        }
-    );
-  }
+  serverRoute();
   server.begin();
 }
 
@@ -396,3 +383,90 @@ void sendRequest(SERIAL_OPERATION so)
   }
   delay(200);
 }
+
+void serverRoute(void) {
+  server.on("/api/operation", []
+    {
+      if (server.method() != HTTP_POST) {
+        server.send(405, "text/plain", "Method Not Allowed");
+        return;
+      }
+      
+      printSerial(server.arg("plain"));
+
+      JsonDocument doc;
+      DeserializationError error = deserializeJson(doc, server.arg("plain"));
+      if (error) {
+        server.send(405, "text/plain", "Bad JSON");
+        return;
+      }
+
+      // if (!doc["CO"].isNull() && doc["CO"].is<const bool>()) {
+      //   sendRequest( doc["CO"].as<const bool>() ? SERIAL_OPERATION::SET_HP_CO_ON : SERIAL_OPERATION::SET_HP_CO_OFF);
+      // }
+      // if (!doc["CWU"].isNull() && doc["CWU"].is<const bool>()) {
+      //   sendRequest( doc["CWU"].as<const bool>() ? SERIAL_OPERATION::SET_HP_CWU_ON : SERIAL_OPERATION::SET_HP_CWU_OFF);
+      // }
+      if (!doc["force"].isNull() && doc["force"].is<const bool>()) {
+        sendRequest(doc["force"].as<const bool>() ? SERIAL_OPERATION::SET_HP_FORCE_ON : SERIAL_OPERATION::SET_HP_FORCE_OFF);
+      }
+
+      if (!doc["work_mode"].isNull()) {
+        jsonAsString(doc["work_mode"]) == "M" ?
+          workMode = WORK_MODE::MANUAL :
+          jsonAsString(doc["work_mode"]) == "A" ?
+            workMode = WORK_MODE::AUTO :
+            jsonAsString(doc["work_mode"]) == "PV" ?
+              workMode = WORK_MODE::AUTO_PV :
+              workMode = WORK_MODE::OFF;  
+      }
+      //force refresh
+      forceRefresh();
+      server.send(200);
+    }
+  );
+
+  server.on("/api/settings",  HTTP_GET, []
+    {
+      String data = "";
+      serializeJsonPretty(settings(), data);
+      server.send(200, "application/json", data);
+    }
+  );
+
+  server.on("/api/hp", []
+    {
+      String data = "";
+      serializeJsonPretty(jsonDocument, data);
+      server.send(200, "application/json", data);
+      forceRefresh();
+    }
+  );
+
+  server.on("/", []
+    {
+      server.sendHeader("Content-Encoding", "gzip");
+      server.send_P(200, "text/html", (const char *)static_files::f_index_html_contents, static_files::f_index_html_size); 
+    }
+  );
+
+  // Create a route handler for each of the build artifacts
+  for (int i = 0; i < static_files::num_of_files; i++)
+  {
+    server.on(static_files::files[i].path, [i]
+        {
+          server.sendHeader("Content-Encoding", "gzip");
+          server.send_P(200, static_files::files[i].type, (const char *)static_files::files[i].contents, static_files::files[i].size); 
+        }
+    );
+  }
+}
+
+void forceRefresh(void) {
+  _counter = 0;
+  _millisSchedule -= MILLIS_SCHEDULE;
+}
+
+/*
+{"Tbe":"23.6","Tae":"23.3","Tco":"23.7","Tho":"23.4","Ttarget":"24.8","Tsump":"23.9","EEV_dt":"0.0","Tcwu":"25.0","Tmax":"18.5","Tmin":"13.0","Tcwu_max":"26.0","Tcwu_min":"23.0","Watts":"72","EEV":"2.0","EEV_pos":"50","HCS":0,"CCS":0,"HPS":0,"F":0,"CWUS":0,"CWU":1,"CO":1}
+*/

@@ -43,11 +43,16 @@ export type TPV = {
 }
 
 export type TCO = {
-  hp: THP,
-  pv: TPV,
+  HP: THP,
+  PV: TPV,
   time: String,
   co_pomp: boolean,
   pv_power: boolean,
   schedule_on: boolean,
   work_mode: String
+}
+
+export type TSaveCO = {
+  force?: boolean,
+  work_mode?: String
 }

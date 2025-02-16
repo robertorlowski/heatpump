@@ -224,10 +224,7 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, DateTime rtcTime, JsonDocument hp
     case OFF:
       tft.printf("OFF");
   }
-  // tft.setCursor(0, 13);
-  // tft.println(co_on ? "CO:ON" : "CO:OFF");
-  tft.setCursor(105, 33);
-  tft.println(co_on ? "ON" : "OFF");
+
 
   tft.drawLine(0, 23, 420, 23, ST77XX_BLUE);
   if (!hpDoc.isNull() && !hpDoc["HP"].isNull())
@@ -235,18 +232,24 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, DateTime rtcTime, JsonDocument hp
     JsonObject hp = hpDoc["HP"].as<JsonObject>();
 
     tft.setCursor(0, 13);
-    tft.printf("P:%s", pv.total_prod > 0 ? (String(pv.total_power) + "/" + String((float)pv.total_prod_today / 1000, 1) + "k") : "-/-");
+    tft.printf("P:%s", pv.total_prod > 0 ? (String(pv.total_power) + "/" + String((float)pv.total_prod_today / 1000, 1) + "k") : "---/---");
     // tft.printf("P:%s", "3000/20.2k");
 
     tft.setCursor(90, 13);
-    tft.printf("T:%s", pv.total_prod > 0 ? String((int)pv.temperature) : "-");
+    tft.printf("T:%s", pv.total_prod > 0 ? String((int)pv.temperature) : "---");
 
+    // tft.setCursor(0, 13);
+    // tft.println(co_on ? "CO:ON" : "CO:OFF");
+    tft.setCursor(105, 33);
+    tft.println(hp["CO"] ? "ON" : "OFF");
+    
     tft.setCursor(105, 53);
-    tft.printf("%s", jsonAsString(hp["CWUS"]) == "1" ? "ON" : "OFF");
+    tft.printf("%s", hp["CWU"] ? "ON" : "OFF");
+    
 
     tft.setTextSize(2);
 
-    if (jsonAsString(hp["F"]) == "1")
+    if (hp["F"])
     {
       tft.setTextColor(ST77XX_YELLOW);
       tft.setCursor(0, 10 + 20);
@@ -261,12 +264,11 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, DateTime rtcTime, JsonDocument hp
     }
     else
     {
-      if (jsonAsString(hp["HPS"]) == "1")
+      if (co_on)
       {
         tft.setTextColor(ST77XX_RED);
       }
-      displayRow(tft, 1, -1, " CO:",
-                 jsonAsString(hp["CO"]) == "0" ? "OFF" : jsonAsString(hp["Ttarget"]));
+      displayRow(tft, 1, -1, " CO:", jsonAsString(hp["Ttarget"]));
       tft.setTextColor(ST77XX_WHITE);
     }
 
@@ -276,12 +278,11 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, DateTime rtcTime, JsonDocument hp
     }
     else
     {
-      if (jsonAsString(hp["CWUS"]) == "1")
+      if (hp["CWUS"])
       {
         tft.setTextColor(ST77XX_RED);
       }
-      displayRow(tft, 3, -1, "CWU:",
-                 jsonAsString(hp["CWU"]) == "0" ? "OFF" : jsonAsString(hp["Tcwu"]));
+      displayRow(tft, 3, -1, "CWU:", jsonAsString(hp["Tcwu"]));
       tft.setTextColor(ST77XX_WHITE);
     }
 
@@ -290,8 +291,8 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, DateTime rtcTime, JsonDocument hp
     tft.setTextSize(1);
 
     int xx = 6;
-    displayRow(tft, xx++, 0, "  T. CO: ", jsonAsString(hp["Tmin"]) + " / " + jsonAsString(hp["Tmax"]));
-    displayRow(tft, xx++, 0, "  T.CWU: ", jsonAsString(hp["Tcwu_min"]) + " / " + jsonAsString(hp["Tcwu_max"]));
+    displayRow(tft, xx++, 0, "   T. CO:", jsonAsString(hp["Tmin"]) + "/" + jsonAsString(hp["Tmax"]));
+    displayRow(tft, xx++, 0, "   T.CWU:", jsonAsString(hp["Tcwu_min"]) + "/" + jsonAsString(hp["Tcwu_max"]));
 
     displayRow(tft, xx, 0, "T.be:", jsonAsString(hp["Tbe"]));
     displayRow(tft, xx++, 1, "T.ae:", jsonAsString(hp["Tae"]));
@@ -306,16 +307,9 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, DateTime rtcTime, JsonDocument hp
     displayRow(tft, xx++, 1, "E.dt:", jsonAsString(hp["EEV_dt"]));
 
     displayRow(tft, xx, 0, "E.ps:", jsonAsString(hp["EEV_pos"]));
-    displayRow(tft, xx++, 1, "HP.s:",
-               jsonAsString(hp["HPS"]) == "" ? "" : (jsonAsString(hp["HPS"]) == "1" ? "ON" : "OFF"));
-
-    displayRow(tft, xx, 0, "HC.s:",
-               jsonAsString(hp["HCS"]) == "" ? "" : (jsonAsString(hp["HCS"]) == "1" ? "ON" : "OFF"));
-    displayRow(tft, xx++, 1, "CC.s:",
-               jsonAsString(hp["CCS"]) == "" ? "" : (jsonAsString(hp["CCS"]) == "1" ? "ON" : "OFF"));
+    displayRow(tft, xx++, 1, "HP.s:", hp["HPS"]  ? "ON" : "OFF");
+ 
+    displayRow(tft, xx, 0, "HC.s:", hp["HCS"] ? "ON" : "OFF");
+    displayRow(tft, xx++, 1, "CC.s:", hp["CCS"] ? "ON" : "OFF");
   }
 }
-
-/*
-{"Tbe":"23.6","Tae":"23.3","Tco":"23.7","Tho":"23.4","Ttarget":"24.8","Tsump":"23.9","EEV_dt":"0.0","Tcwu":"25.0","Tmax":"18.5","Tmin":"13.0","Tcwu_max":"26.0","Tcwu_min":"23.0","Watts":"72","EEV":"2.0","EEV_pos":"50","HCS":"0","CCS":"0","HPS":"0","F":"0","CWUS":"0","CWU":"1","CO":"1"}
-*/

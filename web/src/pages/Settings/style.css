@@ -38,6 +38,23 @@ h3 {
 	box-shadow: 0 25px 50px -12px #673ab888;
 }
 
+
+.dict-select {
+    height: 32px;
+	min-width: 200px;
+	margin-left: 10px;
+}
+
+.error.show {
+	display: block;
+	color: red;
+	font-weight: 500;
+}
+
+.error.hide {
+	display: none;
+}
+
 @media (max-width: 639px) {
 	.settings section {
 		margin-top: 5rem;

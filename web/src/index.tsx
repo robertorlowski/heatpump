@@ -9,7 +9,7 @@ import HP from './pages/HP/index.js';
 
 export default class App extends Component {
 	state = {
-	  logged: true,
+	//   islogged: true,
 	  url: "/"
 	};
   
@@ -20,7 +20,7 @@ export default class App extends Component {
 	};
   
 	render({}, { logged, url }) {
-	//   if (!logged) return <Login />;
+	//   if (!islogged) return <Login />;
 	  return (
  		<LocationProvider>
  			<Header />
