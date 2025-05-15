@@ -5,7 +5,8 @@
   "PV": {},
   "time": "2025.02.16 01:00:46",
   "co_pomp": true,
+  "cwu_pomp": true,
   "pv_power": false,
   "schedule_on": true,
-  "work_mode": "M"
+  "work_mode": "CWU"
 }

@@ -15,12 +15,12 @@
 #define TFT_MISO 0
 
 // #define RELAY_CWU 16
-#define RELAY_HP_UP 25
-#define RELAY_HP_DOWN 26
+#define RELAY_HP_CWU 25
+#define RELAY_HP_CO 26
 #define PWR 18
 #define SWITCH_POMP_CO 5
 
-#ifdef BDz
+#ifdef BD
 #define SSID "Jagodzianka"
 #define PASSWORD "Jagoda25"
 #else
@@ -57,23 +57,32 @@ enum SERIAL_OPERATION {
   SET_HP_CO_ON,
   SET_HP_CO_OFF,
   SET_HP_CWU_ON,
-  SET_HP_CWU_OFF
+  SET_HP_CWU_OFF,
+  SET_SUMP_HEATER_ON,
+  SET_SUMP_HEATER_OFF,
+  SET_COLD_POMP_ON,
+  SET_COLD_POMP_OFF,
+  SET_HOT_POMP_ON,
+  SET_HOT_POMP_OFF,
+  SET_T_SETPOINT_CO,
+  SET_T_DELTA_CO
 };
 
 enum WORK_MODE {
   MANUAL,
   AUTO,
   AUTO_PV,
+  CWU,
   OFF
 };
 
 ScheduleSlot scheduleSlot[]{
     {{22, 0}, {6, 0}},
-    {{13, 0}, {15, 0}}
+    // {{13, 0}, {15, 0}}
 };
 
 ScheduleSlot nightHour {
-    {19, 0}, {8, 0}
+    {22, 0}, {5, 0}
 };
 
 ScheduleSlot setAutoMode {
@@ -158,6 +167,8 @@ template <>
           return dst.set("A");
         case AUTO_PV:
           return dst.set("PV");
+        case CWU:
+          return dst.set("CWU");
         case OFF:
           return dst.set("OFF");
       }

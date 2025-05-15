@@ -13,10 +13,10 @@
 #define PV_DEVICE_ID 0x69
 #define PV_count 5
 #define HP_FORCE_ON 2000
-#define T_CO_ON 30.0
+// #define T_CO_ON 30.0
 
 // const's
-const int MILLIS_SCHEDULE = 30000;
+const int MILLIS_SCHEDULE = 10000;
 
 const char devID = 0x10;
 const size_t JSON_BUFFER_SIZE = 1024;
@@ -29,7 +29,8 @@ JsonDocument jsonDocument;
 DateTime rtcTime;
 PV pv;
 SERIAL_OPERATION serialOpertion;
-WORK_MODE workMode = AUTO_PV;
+WORK_MODE workMode = OFF;
+WORK_MODE prevMode = MANUAL;
 JsonDocument emptyDoc;
 WebServer server(80);
 
@@ -40,6 +41,7 @@ bool schedule_on = false;
 bool pv_power = false;
 uint8_t _counter = 0;
 bool co_pomp = false;
+bool cwu_pomp = false;
 
 // global functions
 bool schedule(DateTime rtcTime);
@@ -47,7 +49,7 @@ JsonDocument settings(void);
 void sendDataToSerial(char operation);
 long _getPVData(uint8_t pv_nr, char *inData, uint8_t b_start, uint8_t b_count);
 void collectDataFromPV(char inData[1024]);
-void sendRequest(SERIAL_OPERATION so);
+void sendRequest(SERIAL_OPERATION so, double value = 0.0f);
 void collectDataFromSerial();
 void serverRoute(void);
 void forceRefresh(void);
@@ -61,8 +63,8 @@ void setup()
   Wire.begin();
   rtc.begin();
 
-  pinMode(RELAY_HP_UP, OUTPUT);
-  pinMode(RELAY_HP_DOWN, OUTPUT);
+  pinMode(RELAY_HP_CWU, OUTPUT);
+  pinMode(RELAY_HP_CO, OUTPUT);
   pinMode(PWR, OUTPUT);
 
   digitalWrite(PWR, HIGH);
@@ -84,9 +86,8 @@ void loop()
   {
     delay(500);
     if (digitalRead(SWITCH_POMP_CO))
-    {
       workMode = nextWorkMode(workMode);
-    }
+  
     PrintMode(tft, workMode);
     _millisSchedule = millis() - (MILLIS_SCHEDULE - 2000);
   }
@@ -94,79 +95,89 @@ void loop()
   if ((_millisSchedule == -1) || (millis() - _millisSchedule > MILLIS_SCHEDULE))
   {
     _millisSchedule = millis();
-    _counter++;
 
     rtcTime = rtc.now(); // Get current time from RTC
     // check co
     schedule_on = schedule(rtcTime);
+
+    if (prevMode != workMode) {
+      if (workMode == WORK_MODE::OFF) 
+        sendRequest(SERIAL_OPERATION::SET_HP_CO_OFF);
+      else 
+        sendRequest(SERIAL_OPERATION::SET_HP_CO_ON);
+    }
+    prevMode = workMode;
+
     switch (workMode)
     {
     case WORK_MODE::OFF:
       co_pomp = false;
+      cwu_pomp = false;
       break;
     case WORK_MODE::MANUAL:
       co_pomp = true;
+      cwu_pomp = true;
       break;
     case WORK_MODE::AUTO:
       co_pomp = schedule_on;
+      cwu_pomp = true;
       break;
     case WORK_MODE::AUTO_PV:
-      if (jsonDocument["HP"].isNull())
-      {
-        co_pomp = schedule_on;
-      }
-      else
-      {
-        JsonObject hp = jsonDocument["HP"].as<JsonObject>();
-        double _temp = hp["Ttarget"].as<float>();
-        co_pomp = schedule_on || (co_pomp ? _temp > (T_CO_ON - 2) : _temp > T_CO_ON);
-      }
+      cwu_pomp = true;
+      co_pomp = schedule_on || pv_power;
       break;
+    case WORK_MODE::CWU:
+      co_pomp = false;
+      cwu_pomp = true;
+      break;  
     }
 
-    digitalWrite(RELAY_HP_UP, co_pomp);
-    digitalWrite(RELAY_HP_DOWN, co_pomp);
+    digitalWriteA(tft, RELAY_HP_CWU, cwu_pomp);
+    digitalWriteA(tft, RELAY_HP_CO, co_pomp);
 
     jsonDocument["time"] = rtcTime;
     jsonDocument["co_pomp"] = co_pomp;
+    jsonDocument["cwu_pomp"] = cwu_pomp; 
     jsonDocument["pv_power"] = pv_power;
     jsonDocument["schedule_on"] = schedule_on;
     jsonDocument["work_mode"] = workMode;
 
     // print ALL
-    PrintAll(tft, co_pomp, rtcTime, jsonDocument, pv, workMode);
+    PrintAll(tft, co_pomp, cwu_pomp, rtcTime, jsonDocument, workMode, pv_power);
 
     if (workMode == WORK_MODE::MANUAL && checkSchedule(rtcTime, setAutoMode))
     {
-      workMode = WORK_MODE::AUTO_PV;
+      workMode = WORK_MODE::AUTO;
       PrintMode(tft, workMode);
       _millisSchedule = millis() - (MILLIS_SCHEDULE - 2000);
     }
 
     // get data from PV + HP
-    if (_counter % 2 == 0)
+    if (_counter % 30 == 0)
     {
       pv.total_power = 0;
       pv.total_prod = 0;
       pv.total_prod_today = 0;
       pv.temperature = 0;
+
       if (checkSchedule(rtcTime, nightHour))
       {
         jsonDocument["PV"] = emptyDoc;
         pv_power = 0;
+        sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
       }
       else
       {
+        sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
         sendRequest(SERIAL_OPERATION::GET_PV_DATA_1);
       }
     }
     else
     {
-      sendRequest(((pv_power || schedule_on) && workMode != OFF) ? SERIAL_OPERATION::SET_HP_CO_ON : SERIAL_OPERATION::SET_HP_CO_OFF);
-      sendRequest(((pv_power >= HP_FORCE_ON) && workMode != OFF) ? SERIAL_OPERATION::SET_HP_FORCE_ON : SERIAL_OPERATION::SET_HP_FORCE_OFF);
-
       sendRequest(SERIAL_OPERATION::GET_HP_DATA);
     }
+
+    _counter++;
   }
 
   // collect data from serial
@@ -195,8 +206,11 @@ void collectDataFromSerial()
     {
       collectDataFromPV(inData);
       if (serialOpertion == SERIAL_OPERATION::GET_PV_DATA_2)
-      {
+      {        
         pv_power = pv.total_power >= HP_FORCE_ON;
+        jsonDocument["pv_power"] = pv_power;
+        sendRequest( (pv_power  && (workMode == AUTO_PV || workMode == CWU) ) ? SERIAL_OPERATION::SET_HP_FORCE_ON : SERIAL_OPERATION::SET_HP_FORCE_OFF);
+        jsonDocument["PV"] = pv;
       }
       else
       {
@@ -224,7 +238,7 @@ void collectDataFromPV(char inData[1024])
     pv.temperature += (_getPVData(i, inData, 28, 1) - _getPVData(i, inData, 27, 1)) / 10;
   }
   pv.temperature = pv.temperature / PV_count;
-  jsonDocument["PV"] = pv;
+
 }
 
 bool schedule(DateTime rtcTime)
@@ -284,7 +298,7 @@ long _getPVData(uint8_t pv_nr, char *inData, uint8_t b_start, uint8_t b_count)
   return ret;
 }
 
-void sendRequest(SERIAL_OPERATION so)
+void sendRequest(SERIAL_OPERATION so, double value)
 {
   uint8_t buffer[10];
   unsigned int crcXmodem;
@@ -380,6 +394,78 @@ void sendRequest(SERIAL_OPERATION so)
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
     break;
+
+  case SET_SUMP_HEATER_ON:
+    buffer[0] = 0x41;
+    buffer[1] = 0x0B;
+    buffer[2] = 0x01;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_SUMP_HEATER_OFF:
+    buffer[0] = 0x41;
+    buffer[1] = 0x0B;
+    buffer[2] = 0x00;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_COLD_POMP_ON:
+    buffer[0] = 0x41;
+    buffer[1] = 0x0A;
+    buffer[2] = 0x01;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_COLD_POMP_OFF:
+    buffer[0] = 0x41;
+    buffer[1] = 0x0A;
+    buffer[2] = 0x00;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_HOT_POMP_ON:
+    buffer[0] = 0x41;
+    buffer[1] = 0x09;
+    buffer[2] = 0x01;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_HOT_POMP_OFF:
+    buffer[0] = 0x41;
+    buffer[1] = 0x09;
+    buffer[2] = 0x00;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;    
+
+  case SET_T_SETPOINT_CO:
+    buffer[0] = 0x41;
+    buffer[1] = 0x04;
+    buffer[2] = (uint8_t)value;
+    buffer[3] = (uint8_t)roundf((value - (uint8_t)value) * 100.0f);
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break; 
+
+  case SET_T_DELTA_CO:
+    buffer[0] = 0x41;
+    buffer[1] = 0x05;
+    buffer[2] = (uint8_t)value;
+    buffer[3] = (uint8_t)roundf((value - (uint8_t)value) * 100.0f);
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break; 
   }
   delay(200);
 }
@@ -405,9 +491,9 @@ void serverRoute(void) {
       // if (!doc["CWU"].isNull() && doc["CWU"].is<const bool>()) {
       //   sendRequest( doc["CWU"].as<const bool>() ? SERIAL_OPERATION::SET_HP_CWU_ON : SERIAL_OPERATION::SET_HP_CWU_OFF);
       // }
-      if (!doc["force"].isNull() && doc["force"].is<const bool>()) {
-        sendRequest(doc["force"].as<const bool>() ? SERIAL_OPERATION::SET_HP_FORCE_ON : SERIAL_OPERATION::SET_HP_FORCE_OFF);
-      }
+      // if (!doc["force"].isNull() && doc["force"].is<const bool>()) {
+      //   sendRequest(doc["force"].as<const bool>() ? SERIAL_OPERATION::SET_HP_FORCE_ON : SERIAL_OPERATION::SET_HP_FORCE_OFF);
+      // }
 
       if (!doc["work_mode"].isNull()) {
         jsonAsString(doc["work_mode"]) == "M" ?
@@ -416,8 +502,42 @@ void serverRoute(void) {
             workMode = WORK_MODE::AUTO :
             jsonAsString(doc["work_mode"]) == "PV" ?
               workMode = WORK_MODE::AUTO_PV :
-              workMode = WORK_MODE::OFF;  
+              jsonAsString(doc["work_mode"]) == "CWU" ?
+                workMode = WORK_MODE::CWU :
+                workMode = WORK_MODE::OFF;  
       }
+
+      if (!doc["temperature_co_max"].isNull()) {
+        sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, doc["temperature_co_max"].as<double>());
+      }
+
+      if (!doc["temperature_co_min"].isNull()) {
+        sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, 
+          doc["temperature_co_max"].as<double>() - doc["temperature_co_min"].as<double>()
+        );
+      }
+      
+      if (!doc["sump_heater"].isNull()) {
+        if (doc["sump_heater"].as<boolean>()) 
+          sendRequest(SERIAL_OPERATION ::SET_SUMP_HEATER_ON);
+        else
+          sendRequest(SERIAL_OPERATION ::SET_SUMP_HEATER_OFF);
+      }
+
+      if (!doc["cold_pomp"].isNull()) {
+        if (doc["cold_pomp"].as<boolean>()) 
+          sendRequest(SERIAL_OPERATION ::SET_COLD_POMP_ON);
+        else
+          sendRequest(SERIAL_OPERATION ::SET_COLD_POMP_OFF);
+      }
+
+      if (!doc["hot_pomp"].isNull()) {
+        if (doc["hot_pomp"].as<boolean>()) 
+          sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_ON);
+        else
+          sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
+      }
+
       //force refresh
       forceRefresh();
       server.send(200);

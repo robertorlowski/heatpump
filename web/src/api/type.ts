@@ -47,6 +47,7 @@ export type TCO = {
   PV: TPV,
   time: String,
   co_pomp: boolean,
+  cwu_pomp: Boolean,
   pv_power: boolean,
   schedule_on: boolean,
   work_mode: String
@@ -54,5 +55,10 @@ export type TCO = {
 
 export type TSaveCO = {
   force?: boolean,
-  work_mode?: String
+  work_mode?: String,
+  temperature_co_max?: Number,
+  temperature_co_min?: Number, 
+  sump_heater?: boolean,
+  cold_pomp?: boolean,
+  hot_pomp?: boolean
 }

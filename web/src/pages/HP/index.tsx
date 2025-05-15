@@ -48,13 +48,14 @@ export default class HP extends Component<{}, IState> {
 											_data.work_mode == "M" ? "ręczny" :
 												_data.work_mode == "A" ? "automatyczny" :
 													_data.work_mode == "PV" ? "automatyczny z PV" :
-														_data.work_mode == "OFF" ? " OFF " : " --- "
+														_data.work_mode == "CWU" ? " CWU " : 
+															_data.work_mode == "OFF" ? " OFF " : " --- "
 										}
 									</span>
 								</div>
 							</div>
 							<div class="heat body">
-							<table class="heat table" style="width: 30	%;">
+							{/* <table class="heat table" style="width: 30	%;">
 									<thead></thead>
 									<tbody>
 										<tr class="left">
@@ -72,10 +73,10 @@ export default class HP extends Component<{}, IState> {
 													<img title="CWU" src={ _hp.CWU ? swith_on : swith_off}/>
 												}
 											</td>
-										</tr>
+										</tr> 
 									</tbody>
 									<tfoot></tfoot>													
-								</table>
+								</table> */}
 								<table class="heat table" style="width: 40%; font-size: 32px; justify-content: center;">
 									<thead></thead>
 									<tbody>
@@ -88,7 +89,7 @@ export default class HP extends Component<{}, IState> {
 										</tr>
 										<tr>
 											<td class ="label">CWU:</td>
-											<td className= { _hp.CWUS ? `field incorrect` : `field correct`}>
+											<td className= { _data.cwu_pomp ? `field incorrect` : `field correct`}>
 													{_hp.Tcwu ? _hp.Tcwu : "---"}
 											</td>
 										</tr>
@@ -152,10 +153,10 @@ export default class HP extends Component<{}, IState> {
 										<td class ="label">Temp. CO min:</td>
 										<td class="field">{_hp.Tmin ?_hp.Tmin : "---"}</td>
 									</tr>
-									<tr>
+									{/* <tr>
 										<td class ="label">Temp. CWU min:</td>
 										<td class="field">{_hp.Tcwu_min ?_hp.Tcwu_min : "---"}</td>
-									</tr>
+									</tr> */}
 									<tr>
 										<td class ="label">Temp. BE</td>
 										<td className= {(_hp.Tbe < 0) ? `field incorrect` : `field `}>{_hp.Tbe ?_hp.Tbe : "---"}</td>
@@ -191,10 +192,10 @@ export default class HP extends Component<{}, IState> {
 										<td class ="label">Temp. CO max:</td>
 										<td class="field">{_hp.Tmax ?_hp.Tmax : "---"}</td>
 									</tr>
-									<tr>
+									{/* <tr>
 										<td class ="label">Temp CWU max:</td>
 										<td class="field">{_hp.Tcwu_max ?_hp.Tcwu_max : "---"}</td>
-									</tr>
+									</tr> */}
 									<tr>
 										<td class ="label">Temp. AE:</td>
 										<td className= {(_hp.Tae < 0) ? `field incorrect` : `field `}>{_hp.Tae ?_hp.Tae : "---"}</td>
@@ -263,9 +264,8 @@ export default class HP extends Component<{}, IState> {
 						<div>
 							<ul>
 								<li>Moc: <strong>{_pv && _pv.total_power ? _pv.total_power : "---"}  </strong> W</li>
-								<li>Temperatura: <strong>{_pv && _pv.temperature ? _pv.temperature : "---"} </strong> MW</li>	
-								<li>Produkcja dzisiaj: <strong>{_pv && _pv.total_prod_today ? _pv.total_prod_today : "---"}  </strong> kW</li>
-								<li>Produkcja łącznie: <strong>{_pv && _pv.total_power ? _pv.total_power : "---"} </strong> MW</li>							
+								<li>Temperatura: <strong>{_pv && _pv.temperature ? _pv.temperature : "---"} </strong> C</li>	
+								<li>Produkcja dziś: <strong>{_pv && _pv.total_prod_today ? _pv.total_prod_today : "---"}  </strong> kW</li>
 							</ul>
 						</div>
 						

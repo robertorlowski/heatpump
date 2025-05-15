@@ -57,11 +57,14 @@ WORK_MODE nextWorkMode(WORK_MODE wm)
   case AUTO_PV:
     return AUTO;
   case AUTO:
+    return CWU;
+  case CWU:
     return OFF;
   case OFF:
     return MANUAL;
   }
-  return AUTO_PV;
+
+  return CWU;
 }
 
 bool checkSchedule(DateTime currentTime, ScheduleSlot slot)
@@ -118,7 +121,8 @@ void initialize(RTC_DS3231 rtc, Adafruit_ST7735 tft)
     delay(3000);
 
     timeClient.begin();
-    timeClient.setTimeOffset(3600);
+    timeClient.setTimeOffset(7200);
+    // timeClient.setTimeOffset(3600);
 
     while (!timeClient.update())
     {
@@ -181,6 +185,9 @@ void PrintMode(Adafruit_ST7735 tft, WORK_MODE work)
     case AUTO:
       tft.setCursor(40, 70);
       tft.print("AUTO");
+    case CWU:
+      tft.setCursor(40, 70);
+      tft.print("CWU");
       break;
     case AUTO_PV:
       tft.setCursor(50, 70);
@@ -202,11 +209,24 @@ void PrintMode(Adafruit_ST7735 tft, WORK_MODE work)
     tft.println("Error WIFI");
 }
 
-void PrintAll(Adafruit_ST7735 tft, bool co_on, DateTime rtcTime, JsonDocument hpDoc, PV pv, WORK_MODE work)
-{
+void digitalWriteA(Adafruit_ST7735 tft, uint8_t pin, uint8_t val) {
+  uint8_t prev = digitalRead(pin); 
+  digitalWrite(pin, val);
+  if (prev != val) {
+    tft.initR(INITR_BLACKTAB); // Init ST7735S chip, black tab
+    tft.setRotation(0);
+    tft.setTextWrap(false); 
+    delay(1000); 
+  }
+  
+}
+
+void PrintAll(Adafruit_ST7735 tft, bool co_on, bool cwu_on, DateTime rtcTime, JsonDocument hpDoc, WORK_MODE work, bool pv_power)
+{  
   tft.fillScreen(ST77XX_BLACK);
   tft.setTextSize(1);
 
+  tft.clearWriteError();
   tft.setCursor(0, 3);
   tft.printf("%04d.%02d.%02d %02d:%02d", rtcTime.year(), rtcTime.month(), rtcTime.day(), rtcTime.hour(), rtcTime.minute());
   tft.setCursor(110, 3);
@@ -221,25 +241,35 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, DateTime rtcTime, JsonDocument hp
     case AUTO_PV:
       tft.printf("PV");
       break;
+    case CWU:
+      tft.printf("CWU");
+      break;
     case OFF:
       tft.printf("OFF");
   }
 
-
   tft.drawLine(0, 23, 420, 23, ST77XX_BLUE);
+  
+  if (!hpDoc.isNull() && !hpDoc["PV"].isNull())
+  {
+    JsonObject pv = hpDoc["PV"].as<JsonObject>();
+
+    tft.setCursor(0, 13);
+    tft.printf("P:%s", jsonAsString(pv["total_power"]));
+
+    tft.setCursor(90, 13);
+    tft.printf("T:%s", jsonAsString(pv["temperature"]));
+  
+  } else {
+    tft.printf("P:%s", "---/---");
+    tft.setCursor(90, 13);
+    tft.printf("T:%s", "---");
+  }
+  
   if (!hpDoc.isNull() && !hpDoc["HP"].isNull())
   {
     JsonObject hp = hpDoc["HP"].as<JsonObject>();
 
-    tft.setCursor(0, 13);
-    tft.printf("P:%s", pv.total_prod > 0 ? (String(pv.total_power) + "/" + String((float)pv.total_prod_today / 1000, 1) + "k") : "---/---");
-    // tft.printf("P:%s", "3000/20.2k");
-
-    tft.setCursor(90, 13);
-    tft.printf("T:%s", pv.total_prod > 0 ? String((int)pv.temperature) : "---");
-
-    // tft.setCursor(0, 13);
-    // tft.println(co_on ? "CO:ON" : "CO:OFF");
     tft.setCursor(105, 33);
     tft.println(hp["CO"] ? "ON" : "OFF");
     
@@ -249,7 +279,7 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, DateTime rtcTime, JsonDocument hp
 
     tft.setTextSize(2);
 
-    if (hp["F"])
+    if (hp["F"] || pv_power)
     {
       tft.setTextColor(ST77XX_YELLOW);
       tft.setCursor(0, 10 + 20);
@@ -272,18 +302,24 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, DateTime rtcTime, JsonDocument hp
       tft.setTextColor(ST77XX_WHITE);
     }
 
-    if (hp["CWU"].isNull())
-    {
-      displayRow(tft, 3, -1, "CWU:", "----");
-    }
-    else
-    {
-      if (hp["CWUS"])
-      {
-        tft.setTextColor(ST77XX_RED);
-      }
-      displayRow(tft, 3, -1, "CWU:", jsonAsString(hp["Tcwu"]));
-      tft.setTextColor(ST77XX_WHITE);
+    // if (hp["CWU"].isNull())
+    // {
+    //   displayRow(tft, 3, -1, "CWU:", "----");
+    // }
+    // else
+    // {
+    //   if (hp["CWUS"])
+    //   {
+    //     tft.setTextColor(ST77XX_RED);
+    //   }
+    //   displayRow(tft, 3, -1, "CWU:", jsonAsString(hp["Tcwu"]));
+    //   tft.setTextColor(ST77XX_WHITE);
+    // }
+
+    if (cwu_on ) {
+      displayRow(tft, 3, -1, "CWU:", "ON");
+    } else {
+      displayRow(tft, 3, -1, "CWU:", "OFF");
     }
 
     tft.setTextColor(ST77XX_WHITE);
