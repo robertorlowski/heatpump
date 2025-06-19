@@ -46,6 +46,7 @@ typedef struct
     long total_prod = 0;
     long total_prod_today = 0; 
     float temperature = 0.0;
+    bool pv_power = false;
 } PV;
 
 enum SERIAL_OPERATION { 
@@ -76,13 +77,15 @@ enum WORK_MODE {
   OFF
 };
 
-ScheduleSlot scheduleSlot[]{
+ScheduleSlot coSlots[1]{
     {{22, 0}, {6, 0}},
     // {{13, 0}, {15, 0}}
 };
 
-ScheduleSlot nightHour {
-    {22, 0}, {5, 0}
+ScheduleSlot cwuSlots[3] {
+    {{13, 0}, {14, 0}},
+    {{22, 0}, {23, 0}},
+    {{5, 0}, {6, 0}}
 };
 
 ScheduleSlot setAutoMode {

@@ -1,5 +1,5 @@
 import { Component, render } from 'preact';
-import { LocationProvider, Router, Route } from 'preact-iso';
+import { LocationProvider, Router, Route, ErrorBoundary } from 'preact-iso';
 
 import { Header } from './components/Header.jsx';
 import { NotFound } from './pages/_404.jsx';
@@ -13,24 +13,17 @@ export default class App extends Component {
 	  url: "/"
 	};
   
-	handleRoute = (url: string) => {
-	  this.setState(() => {
-		return { url };
-	  });
-	};
-  
-	render({}, { logged, url }) {
+	render({}, { }) {
 	//   if (!islogged) return <Login />;
 	  return (
  		<LocationProvider>
- 			<Header />
-			<main>
- 				<Router onRouteChange={this.handleRoute}>
- 					<Route path="/" component={HP} />
- 					<Route path="/settings" component={Settings}/>
- 					<Route default component={NotFound} />
- 				</Router>
- 			</main>
+			<ErrorBoundary>
+				<Router>
+					<Route path="/" component={HP} />
+					<Route path="/settings" component={Settings}/>
+					<Route default component={HP} />
+				</Router>
+			</ErrorBoundary>
  		</LocationProvider>
 	  );
 	}

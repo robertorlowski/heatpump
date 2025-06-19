@@ -54,11 +54,11 @@ export type TCO = {
 }
 
 export type TSaveCO = {
-  force?: boolean,
+  force?: String,
   work_mode?: String,
-  temperature_co_max?: Number,
-  temperature_co_min?: Number, 
-  sump_heater?: boolean,
-  cold_pomp?: boolean,
-  hot_pomp?: boolean
+  temperature_co_max?: String,
+  temperature_co_min?: String, 
+  sump_heater?: String,
+  cold_pomp?: String,
+  hot_pomp?: String
 }

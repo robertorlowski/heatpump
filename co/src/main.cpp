@@ -16,7 +16,7 @@
 // #define T_CO_ON 30.0
 
 // const's
-const int MILLIS_SCHEDULE = 10000;
+const int MILLIS_SCHEDULE = 30000;
 
 const char devID = 0x10;
 const size_t JSON_BUFFER_SIZE = 1024;
@@ -38,13 +38,12 @@ WebServer server(80);
 unsigned long _millisSchedule = -1;
 
 bool schedule_on = false;
-bool pv_power = false;
 uint8_t _counter = 0;
 bool co_pomp = false;
 bool cwu_pomp = false;
 
 // global functions
-bool schedule(DateTime rtcTime);
+bool schedule(DateTime time, ScheduleSlot *slots, int arraySize);
 JsonDocument settings(void);
 void sendDataToSerial(char operation);
 long _getPVData(uint8_t pv_nr, char *inData, uint8_t b_start, uint8_t b_count);
@@ -98,9 +97,11 @@ void loop()
 
     rtcTime = rtc.now(); // Get current time from RTC
     // check co
-    schedule_on = schedule(rtcTime);
+    schedule_on = schedule(rtcTime, coSlots, (sizeof(coSlots) / sizeof(ScheduleSlot)));
 
     if (prevMode != workMode) {
+      sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
+      
       if (workMode == WORK_MODE::OFF) 
         sendRequest(SERIAL_OPERATION::SET_HP_CO_OFF);
       else 
@@ -120,15 +121,22 @@ void loop()
       break;
     case WORK_MODE::AUTO:
       co_pomp = schedule_on;
-      cwu_pomp = true;
+      cwu_pomp = co_pomp;
       break;
     case WORK_MODE::AUTO_PV:
-      cwu_pomp = true;
-      co_pomp = schedule_on || pv_power;
+      co_pomp = schedule_on || pv.pv_power;
+      cwu_pomp = co_pomp;
+      // cwu_pomp = true;
       break;
     case WORK_MODE::CWU:
       co_pomp = false;
-      cwu_pomp = true;
+      cwu_pomp = false;
+      if (schedule(rtcTime, cwuSlots, (sizeof(cwuSlots) / sizeof(ScheduleSlot)))) {
+        sendRequest(SERIAL_OPERATION::SET_HP_FORCE_ON);
+      } else {
+        sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
+      }
+      //cwu_pomp = true;
       break;  
     }
 
@@ -138,12 +146,12 @@ void loop()
     jsonDocument["time"] = rtcTime;
     jsonDocument["co_pomp"] = co_pomp;
     jsonDocument["cwu_pomp"] = cwu_pomp; 
-    jsonDocument["pv_power"] = pv_power;
+    jsonDocument["pv_power"] = pv.pv_power;
     jsonDocument["schedule_on"] = schedule_on;
     jsonDocument["work_mode"] = workMode;
 
     // print ALL
-    PrintAll(tft, co_pomp, cwu_pomp, rtcTime, jsonDocument, workMode, pv_power);
+    PrintAll(tft, co_pomp, cwu_pomp, rtcTime, jsonDocument, workMode, pv);
 
     if (workMode == WORK_MODE::MANUAL && checkSchedule(rtcTime, setAutoMode))
     {
@@ -153,27 +161,18 @@ void loop()
     }
 
     // get data from PV + HP
-    if (_counter % 30 == 0)
+    if (_counter % 10 == 0)
     {
-      pv.total_power = 0;
-      pv.total_prod = 0;
-      pv.total_prod_today = 0;
-      pv.temperature = 0;
-
-      if (checkSchedule(rtcTime, nightHour))
-      {
+        pv.total_power = 0;
+        pv.total_prod = 0;
+        pv.total_prod_today = 0;
+        pv.temperature = 0;
         jsonDocument["PV"] = emptyDoc;
-        pv_power = 0;
-        sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
-      }
-      else
-      {
-        sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
         sendRequest(SERIAL_OPERATION::GET_PV_DATA_1);
-      }
     }
     else
     {
+      jsonDocument["HP"] = emptyDoc;
       sendRequest(SERIAL_OPERATION::GET_HP_DATA);
     }
 
@@ -204,17 +203,28 @@ void collectDataFromSerial()
   {
     if (inData[1] == 0x03)
     {
-      collectDataFromPV(inData);
-      if (serialOpertion == SERIAL_OPERATION::GET_PV_DATA_2)
-      {        
-        pv_power = pv.total_power >= HP_FORCE_ON;
-        jsonDocument["pv_power"] = pv_power;
-        sendRequest( (pv_power  && (workMode == AUTO_PV || workMode == CWU) ) ? SERIAL_OPERATION::SET_HP_FORCE_ON : SERIAL_OPERATION::SET_HP_FORCE_OFF);
-        jsonDocument["PV"] = pv;
-      }
-      else
-      {
+      if (serialOpertion == SERIAL_OPERATION::GET_PV_DATA_1) {
+        collectDataFromPV(inData);
         sendRequest(SERIAL_OPERATION::GET_PV_DATA_2);
+      } 
+      else if (serialOpertion == SERIAL_OPERATION::GET_PV_DATA_2)
+      {        
+        collectDataFromPV(inData);
+        if (pv.pv_power && (pv.total_power >= HP_FORCE_ON))
+        {
+          sendRequest( (pv.pv_power  && (workMode == AUTO_PV) ) ? 
+            SERIAL_OPERATION::SET_HP_FORCE_ON : 
+            SERIAL_OPERATION::SET_HP_FORCE_OFF);
+        } 
+        else 
+        {
+          sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
+        }
+        pv.pv_power = pv.total_power >= HP_FORCE_ON;
+        jsonDocument["pv_power"] = pv.pv_power;
+        jsonDocument["PV"] = pv;
+        
+        // printSerial(jsonDocument["PV"]);
       }
     }
   }
@@ -232,22 +242,33 @@ void collectDataFromPV(char inData[1024])
 {
   for (int i = 0; i < PV_count; i++)
   {
-    pv.total_power += _getPVData(i, inData, 19, 2) / 10;
-    pv.total_prod_today += _getPVData(i, inData, 21, 2);
-    pv.total_prod += _getPVData(i, inData, 23, 4);
-    pv.temperature += (_getPVData(i, inData, 28, 1) - _getPVData(i, inData, 27, 1)) / 10;
-  }
-  pv.temperature = pv.temperature / PV_count;
+    // printSerial("NR " + String(i) + " total_power " + String(_getPVData(i, inData, 19, 2)/10));
+    pv.total_power += _getPVData(i, inData, 19, 2)/10;
 
+    // printSerial("NR " + String(i) + " total_prod_today " +  String(_getPVData(i, inData, 21, 2)));
+    pv.total_prod_today += _getPVData(i, inData, 21, 2);
+
+    // printSerial("NR " + String(i) + " total_prod " +  String(_getPVData(i, inData, 23, 4)));
+    pv.total_prod += _getPVData(i, inData, 23, 4);
+
+    // printSerial("NR " + String(i) + " temperature 0 " +  String(_getPVData(i, inData, 27, 2) ));
+    // printSerial("NR " + String(i) + " temperature 1 " +  String(_getPVData(i, inData, 27, 1) ));
+    // printSerial("NR " + String(i) + " temperature 2 " +  String(_getPVData(i, inData, 28, 1) ));
+
+    pv.temperature = _getPVData(i, inData, 27, 2) / 10;   
+    // printSerial("NR " + String(i) + " temperature " +  String(((_getPVData(i, inData, 28, 1) + _getPVData(i, inData, 27, 1)) / 10)));
+    // pv.temperature = ((_getPVData(i, inData, 28, 1) + _getPVData(i, inData, 27, 1)) / 10);
+
+
+  }
 }
 
-bool schedule(DateTime rtcTime)
+bool schedule(DateTime time, ScheduleSlot *slots, int arraySize)
 {
   bool _ret = false;
-  int arraySize = sizeof(scheduleSlot) / sizeof(ScheduleSlot);
   for (int i = 0; (i < arraySize && !_ret); i++)
   {
-    _ret = _ret || checkSchedule(rtcTime, scheduleSlot[i]);
+    _ret = _ret || checkSchedule(time, slots[i]);
   }
   return _ret;
 }
@@ -277,16 +298,16 @@ void sendDataToSerial(char operation)
 
 JsonDocument settings(void)
 {
-  u8_t size = sizeof(scheduleSlot) / sizeof(ScheduleSlot);
+  u8_t size = sizeof(coSlots) / sizeof(ScheduleSlot);
   JsonDocument jsonscheduleSlots;
   JsonArray arrayJsonscheduleSlots = jsonscheduleSlots.to<JsonArray>();
   for (int i = 0; i < size; i++)
   {
-    arrayJsonscheduleSlots.add(scheduleSlot[i]);
+    arrayJsonscheduleSlots.add(coSlots[i]);
   }
   JsonDocument jsonSettings;
   jsonSettings["settings"] = jsonscheduleSlots;
-  jsonSettings["night_hour"] = nightHour;
+  // jsonSettings["night_hour"] = nightHour;
   return jsonSettings;
 }
 
@@ -295,11 +316,14 @@ long _getPVData(uint8_t pv_nr, char *inData, uint8_t b_start, uint8_t b_count)
   long ret = 0;
   for (int i = 0; i < b_count; i++)
     ret += (int)inData[b_start + i + pv_nr * 40] << ((b_count - i - 1) * 8);
+
   return ret;
 }
 
 void sendRequest(SERIAL_OPERATION so, double value)
 {
+  // printSerial("Operation:" + String(so));
+  delay(1000);
   uint8_t buffer[10];
   unsigned int crcXmodem;
   serialOpertion = so;
@@ -326,7 +350,7 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[6] = highByte(crcXmodem);
     buffer[7] = lowByte(crcXmodem);
     writeSerial(buffer, 8);
-    break;
+    return;
 
   case GET_PV_DATA_2:
     buffer[0] = PV_DEVICE_ID;
@@ -339,7 +363,7 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[6] = highByte(crcXmodem);
     buffer[7] = lowByte(crcXmodem);
     writeSerial(buffer, 8);
-    break;
+    return;
 
   case SET_HP_FORCE_ON:
     buffer[0] = 0x41;
@@ -348,7 +372,7 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[3] = 0x00;
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
-    break;
+    return;
 
   case SET_HP_FORCE_OFF:
     buffer[0] = 0x41;
@@ -357,7 +381,7 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[3] = 0x00;
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
-    break;
+    return;
 
   case SET_HP_CO_ON:
     buffer[0] = 0x41;
@@ -366,7 +390,7 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[3] = 0x00;
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
-    break;
+    return;
 
   case SET_HP_CO_OFF:
     buffer[0] = 0x41;
@@ -375,7 +399,7 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[3] = 0x00;
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
-    break;
+    return;
 
   case SET_HP_CWU_ON:
     buffer[0] = 0x41;
@@ -384,7 +408,7 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[3] = 0x00;
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
-    break;
+    return;
 
   case SET_HP_CWU_OFF:
     buffer[0] = 0x41;
@@ -393,7 +417,7 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[3] = 0x00;
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
-    break;
+    return;
 
   case SET_SUMP_HEATER_ON:
     buffer[0] = 0x41;
@@ -402,7 +426,7 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[3] = 0x00;
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
-    break;
+    return;
 
   case SET_SUMP_HEATER_OFF:
     buffer[0] = 0x41;
@@ -411,7 +435,7 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[3] = 0x00;
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
-    break;
+    return;
 
   case SET_COLD_POMP_ON:
     buffer[0] = 0x41;
@@ -420,7 +444,7 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[3] = 0x00;
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
-    break;
+    return;
 
   case SET_COLD_POMP_OFF:
     buffer[0] = 0x41;
@@ -429,7 +453,7 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[3] = 0x00;
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
-    break;
+    return;
 
   case SET_HOT_POMP_ON:
     buffer[0] = 0x41;
@@ -438,7 +462,7 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[3] = 0x00;
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
-    break;
+    return;
 
   case SET_HOT_POMP_OFF:
     buffer[0] = 0x41;
@@ -447,7 +471,7 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[3] = 0x00;
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
-    break;    
+    return;
 
   case SET_T_SETPOINT_CO:
     buffer[0] = 0x41;
@@ -456,7 +480,7 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[3] = (uint8_t)roundf((value - (uint8_t)value) * 100.0f);
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
-    break; 
+    return;
 
   case SET_T_DELTA_CO:
     buffer[0] = 0x41;
@@ -465,9 +489,9 @@ void sendRequest(SERIAL_OPERATION so, double value)
     buffer[3] = (uint8_t)roundf((value - (uint8_t)value) * 100.0f);
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
-    break; 
+    return;
   }
-  delay(200);
+  
 }
 
 void serverRoute(void) {
@@ -478,23 +502,18 @@ void serverRoute(void) {
         return;
       }
 
-      JsonDocument doc;
-      DeserializationError error = deserializeJson(doc, server.arg("plain"));
+      JsonDocument ddd;
+      DeserializationError error = deserializeJson(ddd, server.arg("plain"));
       if (error) {
         server.send(405, "text/plain", "Bad JSON");
         return;
       }
+      // printSerial(server.arg("plain"));
+      // delay(300);
 
-      // if (!doc["CO"].isNull() && doc["CO"].is<const bool>()) {
-      //   sendRequest( doc["CO"].as<const bool>() ? SERIAL_OPERATION::SET_HP_CO_ON : SERIAL_OPERATION::SET_HP_CO_OFF);
-      // }
-      // if (!doc["CWU"].isNull() && doc["CWU"].is<const bool>()) {
-      //   sendRequest( doc["CWU"].as<const bool>() ? SERIAL_OPERATION::SET_HP_CWU_ON : SERIAL_OPERATION::SET_HP_CWU_OFF);
-      // }
-      // if (!doc["force"].isNull() && doc["force"].is<const bool>()) {
-      //   sendRequest(doc["force"].as<const bool>() ? SERIAL_OPERATION::SET_HP_FORCE_ON : SERIAL_OPERATION::SET_HP_FORCE_OFF);
-      // }
 
+      JsonObject doc = ddd.as<JsonObject>();
+      //work_mode
       if (!doc["work_mode"].isNull()) {
         jsonAsString(doc["work_mode"]) == "M" ?
           workMode = WORK_MODE::MANUAL :
@@ -505,42 +524,66 @@ void serverRoute(void) {
               jsonAsString(doc["work_mode"]) == "CWU" ?
                 workMode = WORK_MODE::CWU :
                 workMode = WORK_MODE::OFF;  
+
+        delay(1000);
       }
 
-      if (!doc["temperature_co_max"].isNull()) {
-        sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, doc["temperature_co_max"].as<double>());
-      }
-
-      if (!doc["temperature_co_min"].isNull()) {
-        sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, 
-          doc["temperature_co_max"].as<double>() - doc["temperature_co_min"].as<double>()
-        );
+      //temperature_co_max
+      if (!doc["temperature_co_max"].isNull() && jsonAsString(doc["temperature_co_max"]) != "" && jsonAsString(doc["temperature_co_max"]).toDouble() > 0) {
+        sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, 
+          jsonAsString(doc["temperature_co_max"]).toDouble() );
+      
+        delay(1000);
       }
       
-      if (!doc["sump_heater"].isNull()) {
-        if (doc["sump_heater"].as<boolean>()) 
-          sendRequest(SERIAL_OPERATION ::SET_SUMP_HEATER_ON);
-        else
+      delay(1000);
+      //temperature_co_min
+      if (!doc["temperature_co_min"].isNull() && jsonAsString(doc["temperature_co_min"]) != "" && 
+            jsonAsString(doc["temperature_co_max"]).toDouble() > 0 && jsonAsString(doc["temperature_co_min"]).toDouble() > 0) {
+          sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, 
+            jsonAsString(doc["temperature_co_max"]).toDouble() - jsonAsString(doc["temperature_co_min"]).toDouble());
+        delay(1000);
+      }
+
+      //sump_heater
+      if (!doc["sump_heater"].isNull() && jsonAsString(doc["sump_heater"]) != "" ) 
+      {
+        (jsonAsString(doc["sump_heater"]) == "1") ?
+          sendRequest(SERIAL_OPERATION ::SET_SUMP_HEATER_ON) :
           sendRequest(SERIAL_OPERATION ::SET_SUMP_HEATER_OFF);
+        delay(1000);
       }
 
-      if (!doc["cold_pomp"].isNull()) {
-        if (doc["cold_pomp"].as<boolean>()) 
-          sendRequest(SERIAL_OPERATION ::SET_COLD_POMP_ON);
-        else
+      //cold_pomp
+      if (!doc["cold_pomp"].isNull() && jsonAsString(doc["cold_pomp"]) != "" ) 
+      {
+        (jsonAsString(doc["cold_pomp"]) == "1") ? 
+          sendRequest(SERIAL_OPERATION ::SET_COLD_POMP_ON) :
           sendRequest(SERIAL_OPERATION ::SET_COLD_POMP_OFF);
+        delay(1000);
       }
 
-      if (!doc["hot_pomp"].isNull()) {
-        if (doc["hot_pomp"].as<boolean>()) 
-          sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_ON);
-        else
+      //hot_pomp
+      if (!doc["hot_pomp"].isNull() && jsonAsString(doc["hot_pomp"]) != "" ) 
+      {
+        (jsonAsString(doc["hot_pomp"]) == "1") ?
+          sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_ON) : 
           sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
+        delay(1000);
       }
 
-      //force refresh
-      forceRefresh();
-      server.send(200);
+      //force
+      if (!doc["force"].isNull() && jsonAsString(doc["force"]) != "" ) 
+      {
+        (jsonAsString(doc["force"]) == "1") ?
+          sendRequest(SERIAL_OPERATION ::SET_HP_FORCE_ON) : 
+          sendRequest(SERIAL_OPERATION ::SET_HP_FORCE_OFF);
+        delay(1000);
+      }
+
+      String data = "";
+      serializeJsonPretty(doc, data);
+      server.send(200, "application/json", data);
     }
   );
 
@@ -557,11 +600,18 @@ void serverRoute(void) {
       String data = "";
       serializeJsonPretty(jsonDocument, data);
       server.send(200, "application/json", data);
-      forceRefresh();
+
+      sendRequest(SERIAL_OPERATION::GET_HP_DATA);
     }
   );
 
   server.on("/", []
+    {
+      server.sendHeader("Content-Encoding", "gzip");
+      server.send_P(200, "text/html", (const char *)static_files::f_index_html_contents, static_files::f_index_html_size); 
+    }
+  );
+  server.on("/settings", []
     {
       server.sendHeader("Content-Encoding", "gzip");
       server.send_P(200, "text/html", (const char *)static_files::f_index_html_contents, static_files::f_index_html_size); 
@@ -580,10 +630,10 @@ void serverRoute(void) {
   }
 }
 
-void forceRefresh(void) {
-  _counter = 0;
-  _millisSchedule -= MILLIS_SCHEDULE;
-}
+// void forceRefresh(void) {
+//   _counter = 0;
+//   _millisSchedule -= MILLIS_SCHEDULE;
+// }
 
 /*
 {"Tbe":"23.6","Tae":"23.3","Tco":"23.7","Tho":"23.4","Ttarget":"24.8","Tsump":"23.9","EEV_dt":"0.0","Tcwu":"25.0","Tmax":"18.5","Tmin":"13.0","Tcwu_max":"26.0","Tcwu_min":"23.0","Watts":"72","EEV":"2.0","EEV_pos":"50","HCS":0,"CCS":0,"HPS":0,"F":0,"CWUS":0,"CWU":1,"CO":1}

@@ -11,17 +11,20 @@ void initialize(RTC_DS3231 rtc, Adafruit_ST7735 tft);
 
 // print lcd
 void PrintD(Adafruit_ST7735 tft, String str, int line = 0);
-void PrintAll(Adafruit_ST7735 tft, bool co_on, DateTime rtcTime, JsonDocument hpDoc, PV pv);
+void PrintAll(Adafruit_ST7735 tft, bool co_on, DateTime rtcTime, JsonDocument hpDoc, PV pv_power);
 
 // serial
 void writeSerial(const uint8_t *buffer, uint8_t length);
 void printSerial(String str);
 int getDataFromSerial(char *_inData);
 
+String jsonAsString(JsonVariant json);
+
 void writeSerial(const uint8_t *buffer, uint8_t length)
 {
   Serial.write(buffer, length);
   Serial.flush();
+  // delay(10);
 }
 
 void printSerial(String str)
@@ -30,6 +33,7 @@ void printSerial(String str)
   Serial.print(outChar);
   Serial.println();
   Serial.flush();
+  // delay(10);
 }
 
 int getDataFromSerial(char *_inData)
@@ -66,6 +70,9 @@ WORK_MODE nextWorkMode(WORK_MODE wm)
 
   return CWU;
 }
+
+
+
 
 bool checkSchedule(DateTime currentTime, ScheduleSlot slot)
 {
@@ -120,6 +127,7 @@ void initialize(RTC_DS3231 rtc, Adafruit_ST7735 tft)
     PrintD(tft, "IP: " + WiFi.localIP().toString(), 1);
     delay(3000);
 
+    
     timeClient.begin();
     timeClient.setTimeOffset(7200);
     // timeClient.setTimeOffset(3600);
@@ -176,26 +184,28 @@ void PrintMode(Adafruit_ST7735 tft, WORK_MODE work)
   tft.fillScreen(ST77XX_BLACK);
   tft.setTextSize(2);
   tft.setTextColor(ST77XX_YELLOW);
+  tft.clearWriteError();
+
   switch (work)
   {
     case MANUAL:
-      tft.setCursor(30, 70);
-      tft.print("MANUAL");
+      tft.setCursor(20, 70);
+      tft.printf("MANUAL");
       break;
     case AUTO:
-      tft.setCursor(40, 70);
-      tft.print("AUTO");
+      tft.setCursor(20, 70);
+      tft.printf("AUTO");
     case CWU:
       tft.setCursor(40, 70);
-      tft.print("CWU");
+      tft.printf("CWU");
       break;
     case AUTO_PV:
-      tft.setCursor(50, 70);
-      tft.println("PV");
+      tft.setCursor(40, 70);
+      tft.printf("PV");
       break;
     case OFF:
       tft.setCursor(30, 70);
-      tft.println("CO OFF");
+      tft.printf("CO OFF");
       break;
   }
   tft.setTextColor(ST77XX_WHITE);
@@ -204,9 +214,9 @@ void PrintMode(Adafruit_ST7735 tft, WORK_MODE work)
   tft.setCursor(10, 150);
   
   if (WiFi.status() == WL_CONNECTED)
-    tft.println("IP: " + WiFi.localIP().toString());
+    tft.printf("IP: %s", WiFi.localIP().toString());
   else
-    tft.println("Error WIFI");
+    tft.printf("Error WIFI");
 }
 
 void digitalWriteA(Adafruit_ST7735 tft, uint8_t pin, uint8_t val) {
@@ -221,7 +231,7 @@ void digitalWriteA(Adafruit_ST7735 tft, uint8_t pin, uint8_t val) {
   
 }
 
-void PrintAll(Adafruit_ST7735 tft, bool co_on, bool cwu_on, DateTime rtcTime, JsonDocument hpDoc, WORK_MODE work, bool pv_power)
+void PrintAll(Adafruit_ST7735 tft, bool co_on, bool cwu_on, DateTime rtcTime, JsonDocument hpDoc, WORK_MODE work, PV pv_power)
 {  
   tft.fillScreen(ST77XX_BLACK);
   tft.setTextSize(1);
@@ -250,21 +260,12 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, bool cwu_on, DateTime rtcTime, Js
 
   tft.drawLine(0, 23, 420, 23, ST77XX_BLUE);
   
-  if (!hpDoc.isNull() && !hpDoc["PV"].isNull())
-  {
-    JsonObject pv = hpDoc["PV"].as<JsonObject>();
+  tft.setCursor(0, 13);
+  tft.printf("P:%d/%d", pv_power.total_power, pv_power.total_prod_today);
 
-    tft.setCursor(0, 13);
-    tft.printf("P:%s", jsonAsString(pv["total_power"]));
-
-    tft.setCursor(90, 13);
-    tft.printf("T:%s", jsonAsString(pv["temperature"]));
+  tft.setCursor(90, 13);
+  tft.printf("T:%2.0f", pv_power.temperature);
   
-  } else {
-    tft.printf("P:%s", "---/---");
-    tft.setCursor(90, 13);
-    tft.printf("T:%s", "---");
-  }
   
   if (!hpDoc.isNull() && !hpDoc["HP"].isNull())
   {
@@ -279,7 +280,7 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, bool cwu_on, DateTime rtcTime, Js
 
     tft.setTextSize(2);
 
-    if (hp["F"] || pv_power)
+    if (hp["F"])
     {
       tft.setTextColor(ST77XX_YELLOW);
       tft.setCursor(0, 10 + 20);
@@ -328,8 +329,9 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, bool cwu_on, DateTime rtcTime, Js
 
     int xx = 6;
     displayRow(tft, xx++, 0, "   T. CO:", jsonAsString(hp["Tmin"]) + "/" + jsonAsString(hp["Tmax"]));
-    displayRow(tft, xx++, 0, "   T.CWU:", jsonAsString(hp["Tcwu_min"]) + "/" + jsonAsString(hp["Tcwu_max"]));
-
+    // displayRow(tft, xx++, 0, "   T.CWU:", jsonAsString(hp["Tcwu_min"]) + "/" + jsonAsString(hp["Tcwu_max"]));
+    xx++;
+    
     displayRow(tft, xx, 0, "T.be:", jsonAsString(hp["Tbe"]));
     displayRow(tft, xx++, 1, "T.ae:", jsonAsString(hp["Tae"]));
 

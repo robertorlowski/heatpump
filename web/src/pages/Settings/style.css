@@ -3,13 +3,13 @@ img {
 }
 
 input.temperature {
-    width: 2rem;
+    width: 4rem;
     display: inline-block;
     height: 16px;
     margin: 4px;
 }
 span.label {
-	min-width: 10rem;
+	min-width: 11rem;
     display: inline-block;
 }
 

@@ -18,10 +18,8 @@ interface IState {
 }
 
 export default class Settings extends Component<{}, IState> {
-	inputRef = createRef();
-
 	render({}, {}) {
-		if (!this.state.data  || !this.state.value) {
+		if ( !this.state.data || !this.state.value) {
 			return 'Loading...';
 		}
 		return (
@@ -35,8 +33,8 @@ export default class Settings extends Component<{}, IState> {
 						<div style="min-width: 240px;">
 							<span class ="label">Tryb pracy:</span>
 							<select class="dict-select" 
-								onChange={(e) => { this.state.value.work_mode = e.currentTarget.value }}
-								value={this.state.value.work_mode}
+								onChange={(e) => this.handleSave({work_mode: e.currentTarget.value}) }
+								value={this.state.value.work_mode} 
 							>
 								<option value="M">ręczny</option>
 								<option value="A">automatyczny</option>
@@ -46,20 +44,26 @@ export default class Settings extends Component<{}, IState> {
 							</select>
 						</div>
 						<div style="min-width: 240px;">
-							<span class ="label">Temperatura:</span>
+							<span class ="label">Temperatura (min/max):</span>
 							<input
 								class="temperature"
 								type="number"
 								name="min"
 								value={this.state.value.temperature_co_min}
-								onChange={(e) => { this.state.value.temperature_co_min = e.currentTarget.valueAsNumber }}
+								onChange={(e) => this.handleSave({
+									temperature_co_min: e.currentTarget.value,
+									temperature_co_max: this.state.value?.temperature_co_max
+								}) }
 							/>
 							<input
 								class="temperature"
 								type="number"
 								name="max"
 								value={this.state.value.temperature_co_max}
-								onChange={(e) => { this.state.value.temperature_co_max = e.currentTarget.valueAsNumber }}
+								onChange={(e) => this.handleSave({
+									temperature_co_min: this.state.value?.temperature_co_min,
+									temperature_co_max: e.currentTarget.value
+								}) }
 							/>
 						</div>
 
@@ -68,8 +72,8 @@ export default class Settings extends Component<{}, IState> {
 							<input
 								title="Wymuś pracę:"
 								type="checkbox"
-								checked={this.state.value.force ? true : false}
-								onChange={(e) => { this.state.value.force = e.currentTarget.checked }}
+								checked={this.state.value.force == "1" ? true : false}
+								onChange={(e) => this.handleSave({force: e.currentTarget.checked ? "1": "0"}) }
 							/> 
 						</div>	
 						<div style="min-width: 240px;">
@@ -78,8 +82,8 @@ export default class Settings extends Component<{}, IState> {
 								title="Pompa zimnej wody"
 								type="checkbox"
 								name="coldPomp"
-								checked={this.state.value.cold_pomp ? true : false}
-								onChange={(e) => { this.state.value.cold_pomp = e.currentTarget.checked }}
+								checked={this.state.value.cold_pomp == "1" ? true : false}
+								onChange={(e) => this.handleSave({cold_pomp: e.currentTarget.checked ? "1": "0"}) }
 							/>
 						</div>	
 						<div style="min-width: 240px;">						
@@ -88,8 +92,8 @@ export default class Settings extends Component<{}, IState> {
 								title="Pompa ciepłej wody"
 								type="checkbox"
 								name="hotPomp"
-								checked={this.state.value.hot_pomp ? true : false}
-								onChange={(e) => { this.state.value.hot_pomp = e.currentTarget.checked}}
+								checked={this.state.value.hot_pomp == "1" ? true : false}
+								onChange={(e) => this.handleSave({hot_pomp: e.currentTarget.checked ? "1": "0"}) }
 							/> 
 						</div>	
 						<div style="min-width: 240px;">
@@ -98,16 +102,15 @@ export default class Settings extends Component<{}, IState> {
 								title="Grzałka krateru"
 								name="sumpHeater"
 								type="checkbox"
-								checked={this.state.value.sump_heater ? true : false}
-								onChange={(e) => { this.state.value.sump_heater = e.currentTarget.checked }}
+								checked={this.state.value.sump_heater == "1" ? true : false}
+								onChange={(e) => this.handleSave({sump_heater: e.currentTarget.checked ? "1": "0"}) }
 							/> 
 						</div>
 						<p>
-							<button type="button" onClick={(e) => this.handleSave(this.state.value)}>Zapisz ustawienia</button>
 							<span class={this.state.error ? `error show` : `error hide` }> 
 								Wystąpił błąd podczas wykonywania operacji..
 							</span>
-						</p>	
+						</p>	 
 					</div>
 					<br/>
 					<this.resource
@@ -115,12 +118,12 @@ export default class Settings extends Component<{}, IState> {
 						description = "Przedziały czasu w którym nastąpi włączenie HP."
 						data= {this.state.data.settings}
 					/>
-					<br/>
+					{/* <br/>
 					<this.resource
 						title="Wyłączenie wykorzystania mocy z PV"
 						description = "Przedziały czasu w którym nastąpi wyłączenie weryfikacji wytwarzanej mocy na panelach fotowoltaicznych."
 						data = {[this.state.data.night_hour]}
-					/>
+					/> */}
 				</section>
 			</div>
 		)
@@ -128,7 +131,8 @@ export default class Settings extends Component<{}, IState> {
 
 	componentWillMount() {
 		this.setState({ error: false });
-		HpRequests.getSettings().then(resp => {
+
+		HpRequests.getSettings().then((resp) => {
 			this.setState({ data: resp });
 		   }
 		).catch(err =>{
@@ -136,39 +140,45 @@ export default class Settings extends Component<{}, IState> {
 		   }
 		);
 
-		HpRequests.getCoData().then(resp => {
+		HpRequests.getCoData().then((resp) => {
 			this.setState(
 				{
 					value: { 
-						force: false,
+						force: "0",
 						work_mode: resp.work_mode,
-						cold_pomp: false,
-						hot_pomp: false,
-						sump_heater: false,
-						temperature_co_min: resp.HP.Tcwu_min ? resp.HP.Tcwu_min : 30,
-						temperature_co_max: resp.HP.Tcwu_max ? resp.HP.Tcwu_max : 40
+						cold_pomp: "0",
+						hot_pomp: "0",
+						sump_heater: "0",
+						temperature_co_min: String(resp.HP.Tmin),
+						temperature_co_max: String(resp.HP.Tmax)
 					}
 				}
 			)
-		}).catch(err =>{
+		}).catch(err => {
 			console.log(err);
 		   }
 		);
 	};
 
 	handleSave(value: TSaveCO) {
-		// this.state.value.force = data.force != undefined  ? data.force : this.state.value.force;
-		// this.state.value.work_mode = data.work_mode != undefined ? data.work_mode : this.state.value.work_mode;
-		// this.state.value.cold_pomp = data.cold_pomp != undefined ? data.cold_pomp : this.state.value.cold_pomp;
-		// this.state.value.hot_pomp = data.hot_pomp != undefined ? data.hot_pomp : this.state.value.hot_pomp;
-		// this.state.value.sump_heater = data.sump_heater != undefined ? data.sump_heater : this.state.value.sump_heater;
-		// this.state.value.temperature_co_max = data.temperature_co_max != undefined ? data.temperature_co_max : this.state.value.temperature_co_max;
-		// this.state.value.temperature_co_min = data.temperature_co_min != undefined ? data.temperature_co_min : this.state.value.temperature_co_min;
-
-		// console.log(value);
+		this.setState(
+				{
+					value: { 
+						force: value.force != undefined?  value.force : this.state.value?.force,
+						work_mode: value.work_mode  != undefined ? value.work_mode : this.state.value?.work_mode,
+						cold_pomp: value.cold_pomp  != undefined ? value.cold_pomp : this.state.value?.cold_pomp,
+						hot_pomp:  value.hot_pomp   != undefined? value.hot_pomp : this.state.value?.hot_pomp,
+						sump_heater: value.sump_heater  != undefined ? value.sump_heater : this.state.value?.sump_heater,
+						temperature_co_min: value.temperature_co_min  != undefined ? value.temperature_co_min : this.state.value?.temperature_co_min,
+						temperature_co_max: value.temperature_co_max  != undefined ? value.temperature_co_max : this.state.value?.temperature_co_max
+					}
+				}
+		);
+		console.log(this.state.value);
 
 		HpRequests.setCoData(value)
 		.then(response => {
+			console.log(response);
 			this.setState(
 				{
 					error: response.status == 200 ? false : true
@@ -176,12 +186,6 @@ export default class Settings extends Component<{}, IState> {
 			)
 		});
 	};
-
-	onInput(e) {
-		if (e.currentTarget.value.length <= 3) {
-			setValue(e.currentTarget.value);
-		}
-	}
 
 	resource(props: {title, description :String, data: TSlot[] }) {
 		let slotList = [];
