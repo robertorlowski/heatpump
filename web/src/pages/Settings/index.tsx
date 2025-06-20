@@ -30,7 +30,7 @@ export default class Settings extends Component<{}, IState> {
 					<div class="resource">
 						<h3>Ustaw</h3>
 						<hr/>	
-						<div style="min-width: 240px;">
+						<div style="min-width: 200px;">
 							<span class ="label">Tryb pracy:</span>
 							<select class="dict-select" 
 								onChange={(e) => this.handleSave({work_mode: e.currentTarget.value}) }
@@ -43,34 +43,68 @@ export default class Settings extends Component<{}, IState> {
 								<option value="OFF">OFF</option>
 							</select>
 						</div>
-						<div style="min-width: 240px;">
-							<span class ="label">Temperatura (min/max):</span>
+
+						<div style="min-width: 200px;">
+							<span class ="label" style="width: 160px;">CWU min/max:</span>
 							<input
 								class="temperature"
 								type="number"
-								name="min"
-								value={this.state.value.temperature_co_min}
-								onChange={(e) => this.handleSave({
-									temperature_co_min: e.currentTarget.value,
-									temperature_co_max: this.state.value?.temperature_co_max
-								}) }
+								name="cwu_min"
+								value={this.state.value.cwu_min}
+								onChange={(e) => this.handleSave(
+									{
+										cwu_min: e.currentTarget.value,
+										cwu_max: this.state.value?.cwu_max
+									}
+								)}
 							/>
 							<input
 								class="temperature"
 								type="number"
-								name="max"
-								value={this.state.value.temperature_co_max}
-								onChange={(e) => this.handleSave({
-									temperature_co_min: this.state.value?.temperature_co_min,
-									temperature_co_max: e.currentTarget.value
-								}) }
+								name="cwu_max"
+								value={this.state.value.cwu_max}
+								onChange={(e) => this.handleSave(
+									{
+										cwu_min: this.state.value?.cwu_min,
+										cwu_max: e.currentTarget.value
+
+									}
+								)}
 							/>
 						</div>
 
-						<div style="min-width: 240px;">
-							<span class ="label">Wymuś pracę:</span>
+						<div style="min-width: 200px;">
+							<span class ="label" style="width: 160px;">CO min/max:</span>
 							<input
-								title="Wymuś pracę:"
+								class="temperature"
+								type="number"
+								name="co_min"
+								value={this.state.value.co_min}
+								onChange={(e) => this.handleSave(
+									{
+										co_min: e.currentTarget.value,
+										co_max: this.state.value?.co_max
+									}
+								)}
+							/>
+							<input
+								class="temperature"
+								type="number"
+								name="co_max"
+								value={this.state.value.co_max}
+								onChange={(e) => this.handleSave(
+									{
+										co_min: this.state.value?.co_min,
+										co_max: e.currentTarget.value,
+									}
+								)}
+							/>
+
+						</div>
+						<div style="min-width: 240px;">
+							<span class ="label">Wymuszenie pracy:</span>
+							<input
+								title="Wymuszenie pracy:"
 								type="checkbox"
 								checked={this.state.value.force == "1" ? true : false}
 								onChange={(e) => this.handleSave({force: e.currentTarget.checked ? "1": "0"}) }
@@ -118,6 +152,12 @@ export default class Settings extends Component<{}, IState> {
 						description = "Przedziały czasu w którym nastąpi włączenie HP."
 						data= {this.state.data.settings}
 					/>
+					<br/>
+					<this.resource
+						title="Wymuszenie startu CWU"
+						description = "Okres w którym następuje wymuszenie startu ladowania CWU"
+						data= {this.state.data.cwu_settings}
+					/>
 					{/* <br/>
 					<this.resource
 						title="Wyłączenie wykorzystania mocy z PV"
@@ -144,13 +184,15 @@ export default class Settings extends Component<{}, IState> {
 			this.setState(
 				{
 					value: { 
-						force: "0",
+						force: resp.HP.F ? "1":"0",
 						work_mode: resp.work_mode,
-						cold_pomp: "0",
-						hot_pomp: "0",
-						sump_heater: "0",
-						temperature_co_min: String(resp.HP.Tmin),
-						temperature_co_max: String(resp.HP.Tmax)
+						cold_pomp: resp.HP.CCS ? "1":"0",
+						hot_pomp: resp.HP.HCS ? "1":"0",
+						sump_heater: resp.HP.SHS ? "1":"0",
+						co_min: String(resp.co_min),
+						co_max: String(resp.co_max),
+						cwu_min: String(resp.cwu_min),
+						cwu_max: String(resp.cwu_max)
 					}
 				}
 			)
@@ -169,22 +211,24 @@ export default class Settings extends Component<{}, IState> {
 						cold_pomp: value.cold_pomp  != undefined ? value.cold_pomp : this.state.value?.cold_pomp,
 						hot_pomp:  value.hot_pomp   != undefined? value.hot_pomp : this.state.value?.hot_pomp,
 						sump_heater: value.sump_heater  != undefined ? value.sump_heater : this.state.value?.sump_heater,
-						temperature_co_min: value.temperature_co_min  != undefined ? value.temperature_co_min : this.state.value?.temperature_co_min,
-						temperature_co_max: value.temperature_co_max  != undefined ? value.temperature_co_max : this.state.value?.temperature_co_max
+						co_min: value.co_min  != undefined ? value.co_min : this.state.value?.co_min,
+						co_max: value.co_max  != undefined ? value.co_max : this.state.value?.co_max,
+						cwu_min: value.cwu_min != undefined?  value.cwu_min : this.state.value?.cwu_min,
+						cwu_max: value.cwu_max != undefined?  value.cwu_max : this.state.value?.cwu_max,
 					}
 				}
 		);
 		console.log(this.state.value);
 
 		HpRequests.setCoData(value)
-		.then(response => {
-			console.log(response);
-			this.setState(
-				{
-					error: response.status == 200 ? false : true
-				}
-			)
-		});
+			.then(response => {
+				console.log(response);
+				this.setState(
+					{
+						error: response.status == 200 ? false : true
+					}
+				)
+			});
 	};
 
 	resource(props: {title, description :String, data: TSlot[] }) {

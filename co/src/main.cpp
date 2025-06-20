@@ -6,8 +6,8 @@
 #include <FastCRC.h>
 #include <WiFi.h>
 #include "web/static_files.h"
-// https://github.com/isaackoz/vite-plugin-preact-esp32
 #include <WebServer.h>
+#include <Preferences.h>
 
 
 #define PV_DEVICE_ID 0x69
@@ -33,11 +33,13 @@ WORK_MODE workMode = OFF;
 WORK_MODE prevMode = MANUAL;
 JsonDocument emptyDoc;
 WebServer server(80);
+Preferences prefs;
 
 // temporary variables
 unsigned long _millisSchedule = -1;
 
-bool schedule_on = false;
+bool schedule_co = false;
+bool schedule_cwu = false;
 uint8_t _counter = 0;
 bool co_pomp = false;
 bool cwu_pomp = false;
@@ -77,27 +79,65 @@ void setup()
 
   serverRoute();
   server.begin();
+
+  prefs.begin("hp");
+
+  if (!prefs.isKey("cwu_min")) {
+    prefs.putDouble("cwu_min", 40);
+  }
+  if (!prefs.isKey("cwu_max")) {
+    prefs.putDouble("cwu_max", 47);
+  }
+  if (!prefs.isKey("co_min")) {
+    prefs.putDouble("co_min", 35);
+  }
+  if (!prefs.isKey("co_max")) {
+    prefs.putDouble("co_max", 45);
+  }
+
+  if (prefs.isKey("workMode")) {
+      workMode = (WORK_MODE)prefs.getShort("workMode", WORK_MODE::OFF);
+  } else {
+     prefs.putShort("workMode", workMode);
+  }
 }
 
 void loop()
 {
   if (digitalRead(SWITCH_POMP_CO))
   {
-    delay(500);
-    if (digitalRead(SWITCH_POMP_CO))
+    delay(1000);
+    if (digitalRead(SWITCH_POMP_CO)) {
       workMode = nextWorkMode(workMode);
+      prefs.putShort("workMode", workMode);
+    }
   
     PrintMode(tft, workMode);
     _millisSchedule = millis() - (MILLIS_SCHEDULE - 2000);
   }
 
+  if ( millis() % 1000 == 0 ) 
+  {
+    jsonDocument["time"] = rtcTime;
+    jsonDocument["co_pomp"] = co_pomp;
+    jsonDocument["cwu_pomp"] = cwu_pomp; 
+    jsonDocument["pv_power"] = pv.pv_power;
+    jsonDocument["schedule_co"] = schedule_co;
+    jsonDocument["work_mode"] = workMode;
+    jsonDocument["co_min"] = prefs.getDouble("co_min");
+    jsonDocument["co_max"] = prefs.getDouble("co_max");
+    jsonDocument["cwu_min"] = prefs.getDouble("cwu_min");
+    jsonDocument["cwu_max"] = prefs.getDouble("cwu_max");
+  }
+  
   if ((_millisSchedule == -1) || (millis() - _millisSchedule > MILLIS_SCHEDULE))
   {
     _millisSchedule = millis();
 
     rtcTime = rtc.now(); // Get current time from RTC
     // check co
-    schedule_on = schedule(rtcTime, coSlots, (sizeof(coSlots) / sizeof(ScheduleSlot)));
+    schedule_co = schedule(rtcTime, coSlots, (sizeof(coSlots) / sizeof(ScheduleSlot)));
+    schedule_cwu = schedule(rtcTime, cwuSlots, (sizeof(cwuSlots) / sizeof(ScheduleSlot)));
 
     if (prevMode != workMode) {
       sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
@@ -120,18 +160,18 @@ void loop()
       cwu_pomp = true;
       break;
     case WORK_MODE::AUTO:
-      co_pomp = schedule_on;
+      co_pomp = schedule_co;
       cwu_pomp = co_pomp;
       break;
     case WORK_MODE::AUTO_PV:
-      co_pomp = schedule_on || pv.pv_power;
+      co_pomp = schedule_co || pv.pv_power;
       cwu_pomp = co_pomp;
       // cwu_pomp = true;
       break;
     case WORK_MODE::CWU:
       co_pomp = false;
       cwu_pomp = false;
-      if (schedule(rtcTime, cwuSlots, (sizeof(cwuSlots) / sizeof(ScheduleSlot)))) {
+      if (schedule_cwu) {
         sendRequest(SERIAL_OPERATION::SET_HP_FORCE_ON);
       } else {
         sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
@@ -140,22 +180,36 @@ void loop()
       break;  
     }
 
+    // if ((schedule_co || schedule_cwu) && workMode != WORK_MODE::OFF)
+    // {
+    //     sendRequest(SERIAL_OPERATION::SET_HP_CO_ON);
+    // } else {
+    //     sendRequest(SERIAL_OPERATION::SET_HP_CO_OFF);
+    // }
+
     digitalWriteA(tft, RELAY_HP_CWU, cwu_pomp);
     digitalWriteA(tft, RELAY_HP_CO, co_pomp);
 
-    jsonDocument["time"] = rtcTime;
-    jsonDocument["co_pomp"] = co_pomp;
-    jsonDocument["cwu_pomp"] = cwu_pomp; 
-    jsonDocument["pv_power"] = pv.pv_power;
-    jsonDocument["schedule_on"] = schedule_on;
-    jsonDocument["work_mode"] = workMode;
+
+    if (workMode != WORK_MODE::OFF) 
+    {
+      if (schedule_co && workMode != WORK_MODE::CWU) {
+        sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("co_max")); 
+        sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("co_max")-prefs.getDouble("co_min")); 
+      }
+      else 
+      {
+        sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("cwu_max")); 
+        sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("cwu_max")-prefs.getDouble("cwu_min")); 
+      }
+    }
 
     // print ALL
     PrintAll(tft, co_pomp, cwu_pomp, rtcTime, jsonDocument, workMode, pv);
 
-    if (workMode == WORK_MODE::MANUAL && checkSchedule(rtcTime, setAutoMode))
+    if (workMode == WORK_MODE::MANUAL && checkSchedule(rtcTime, updateManualMode))
     {
-      workMode = WORK_MODE::AUTO;
+      workMode = (WORK_MODE)prefs.getShort("workMode", WORK_MODE::OFF);
       PrintMode(tft, workMode);
       _millisSchedule = millis() - (MILLIS_SCHEDULE - 2000);
     }
@@ -258,8 +312,6 @@ void collectDataFromPV(char inData[1024])
     pv.temperature = _getPVData(i, inData, 27, 2) / 10;   
     // printSerial("NR " + String(i) + " temperature " +  String(((_getPVData(i, inData, 28, 1) + _getPVData(i, inData, 27, 1)) / 10)));
     // pv.temperature = ((_getPVData(i, inData, 28, 1) + _getPVData(i, inData, 27, 1)) / 10);
-
-
   }
 }
 
@@ -305,9 +357,19 @@ JsonDocument settings(void)
   {
     arrayJsonscheduleSlots.add(coSlots[i]);
   }
+  
+  size = sizeof(cwuSlots) / sizeof(ScheduleSlot);
+  JsonDocument jsonCwuSlots;
+  JsonArray arrayJsonCwuSlots = jsonCwuSlots.to<JsonArray>();
+  for (int i = 0; i < size; i++)
+  {
+    arrayJsonCwuSlots.add(cwuSlots[i]);
+  }
+  
+  
   JsonDocument jsonSettings;
   jsonSettings["settings"] = jsonscheduleSlots;
-  // jsonSettings["night_hour"] = nightHour;
+  jsonSettings["cwu_settings"] = arrayJsonCwuSlots;
   return jsonSettings;
 }
 
@@ -511,7 +573,6 @@ void serverRoute(void) {
       // printSerial(server.arg("plain"));
       // delay(300);
 
-
       JsonObject doc = ddd.as<JsonObject>();
       //work_mode
       if (!doc["work_mode"].isNull()) {
@@ -524,27 +585,26 @@ void serverRoute(void) {
               jsonAsString(doc["work_mode"]) == "CWU" ?
                 workMode = WORK_MODE::CWU :
                 workMode = WORK_MODE::OFF;  
-
-        delay(1000);
       }
 
-      //temperature_co_max
-      if (!doc["temperature_co_max"].isNull() && jsonAsString(doc["temperature_co_max"]) != "" && jsonAsString(doc["temperature_co_max"]).toDouble() > 0) {
-        sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, 
-          jsonAsString(doc["temperature_co_max"]).toDouble() );
+      //co_min
+      if (!doc["co_min"].isNull() && jsonAsString(doc["co_min"]) != "" && jsonAsString(doc["co_min"]).toDouble() > 0) {
+        prefs.putDouble("co_min", jsonAsString(doc["co_min"]).toDouble());      
+      }
+      //co_max
+      if (!doc["co_max"].isNull() && jsonAsString(doc["co_max"]) != "" && jsonAsString(doc["co_max"]).toDouble() > 0) {
+        prefs.putDouble("co_max", jsonAsString(doc["co_max"]).toDouble());
+      }
+      //cwu_min
+      if (!doc["cwu_min"].isNull() && jsonAsString(doc["cwu_min"]) != "" && jsonAsString(doc["cwu_min"]).toDouble() > 0) {
+        prefs.putDouble("cwu_min", jsonAsString(doc["cwu_min"]).toDouble());
+      }
+      //cwu_max
+      if (!doc["cwu_max"].isNull() && jsonAsString(doc["cwu_max"]) != "" && jsonAsString(doc["cwu_max"]).toDouble() > 0) {
+        prefs.putDouble("cwu_max", jsonAsString(doc["cwu_max"]).toDouble());
+      }
       
-        delay(1000);
-      }
       
-      delay(1000);
-      //temperature_co_min
-      if (!doc["temperature_co_min"].isNull() && jsonAsString(doc["temperature_co_min"]) != "" && 
-            jsonAsString(doc["temperature_co_max"]).toDouble() > 0 && jsonAsString(doc["temperature_co_min"]).toDouble() > 0) {
-          sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, 
-            jsonAsString(doc["temperature_co_max"]).toDouble() - jsonAsString(doc["temperature_co_min"]).toDouble());
-        delay(1000);
-      }
-
       //sump_heater
       if (!doc["sump_heater"].isNull() && jsonAsString(doc["sump_heater"]) != "" ) 
       {
@@ -600,8 +660,6 @@ void serverRoute(void) {
       String data = "";
       serializeJsonPretty(jsonDocument, data);
       server.send(200, "application/json", data);
-
-      sendRequest(SERIAL_OPERATION::GET_HP_DATA);
     }
   );
 

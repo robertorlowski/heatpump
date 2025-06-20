@@ -7,7 +7,8 @@ export type TSlot = {
 
 export type TSettings  = {
   night_hour?: TSlot,
-  settings?: TSlot[]
+  settings?: TSlot[],
+  cwu_settings?: TSlot[]
 };
 
 export type THP = {
@@ -32,7 +33,8 @@ export type THP = {
     F: boolean,
     CWUS: boolean,
     CWU: boolean,
-    CO: boolean
+    CO: boolean,
+    SHS: boolean
 }
 
 export type TPV = {
@@ -50,15 +52,21 @@ export type TCO = {
   cwu_pomp: Boolean,
   pv_power: boolean,
   schedule_on: boolean,
-  work_mode: String
+  work_mode: String,
+  co_min: String,
+  co_max: String,
+  cwu_min: String,
+  cwu_max: String
 }
 
 export type TSaveCO = {
   force?: String,
   work_mode?: String,
-  temperature_co_max?: String,
-  temperature_co_min?: String, 
   sump_heater?: String,
   cold_pomp?: String,
-  hot_pomp?: String
+  hot_pomp?: String,
+  co_min?: String,
+  co_max?: String,
+  cwu_min?: String,
+  cwu_max?: String
 }

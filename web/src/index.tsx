@@ -18,6 +18,7 @@ export default class App extends Component {
 	  return (
  		<LocationProvider>
 			<ErrorBoundary>
+				<Header />
 				<Router>
 					<Route path="/" component={HP} />
 					<Route path="/settings" component={Settings}/>

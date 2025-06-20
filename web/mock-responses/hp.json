@@ -10,5 +10,9 @@
   "cwu_pomp": true,
   "pv_power": false,
   "schedule_on": true,
-  "work_mode": "CWU"
+  "work_mode": "CWU",
+  "co_min": "10",
+  "co_max": "20",
+  "cwu_min": "30",
+  "cwu_max": "40"
 }

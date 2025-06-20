@@ -1,27 +1,13 @@
-.settings section {
-    margin-top: 3rem;
-    display: flex;
-    grid-template-columns: repeat(3, 1fr);
-    column-gap: 1.5rem;
-    flex-direction: column;
-}
 
-h2 {
-	padding-top: 1.5rem;;
-}
 
 h3, ul {
     margin-block-start: 0.2rem;
     margin-block-end: 0.2rem;
 }
 
-h4, h5 {
-    margin-block-end: 0.2rem;
-}
 
 .field {
 	font-weight: bold;
-	width: 50%;
 	min-width: 50px;
 	text-align: left;
 	padding-left: 5px;
@@ -44,25 +30,13 @@ h4, h5 {
 	justify-content: flex-end
 }
 
-.resource {
-	padding: 0.75rem 1.5rem;
-	border-radius: 0.5rem;
-	text-align: left;
-	text-decoration: none;
-	color: #222;
-	background-color: #f1f1f1;
-	border: 1px solid transparent;
-	margin-left: 1rem;
-	margin-right: 1rem;
-}
-
 .resource:hover {
 	border: 1px solid #000;
 	box-shadow: 0 25px 50px -12px #673ab888;
 }
 
 table {
-	width: 40%;
+	width: 50%;
 	border-collapse: collapse;
 	margin: 5px 0;
 }
@@ -100,10 +74,13 @@ th, td {
 	padding-right: 10px;
 }
 
+
 .hp-data {
-	display: flex;
-	flex-direction: row;
+    display: flex;
+    flex-direction: row;
     align-items: flex-start;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
 }
 
 /* @media (max-width: 639px) {
@@ -138,15 +115,15 @@ th, td {
 
 }
 
-.heat.footer,
+
 .heat.head {
-	min-width: 300px;
-    display: flex;	
     height: 2rem;
-    align-content: center;
-    align-items: center;
-    flex-direction: row;
-    justify-content: space-between;;
+	justify-content: space-around;
+}
+
+.heat.footer {
+    height: 2rem;
+	justify-content: left;
 }
 
 img.field {

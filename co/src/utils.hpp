@@ -71,9 +71,6 @@ WORK_MODE nextWorkMode(WORK_MODE wm)
   return CWU;
 }
 
-
-
-
 bool checkSchedule(DateTime currentTime, ScheduleSlot slot)
 {
   char s_time[13];

@@ -69,7 +69,7 @@ enum SERIAL_OPERATION {
   SET_T_DELTA_CO
 };
 
-enum WORK_MODE {
+enum WORK_MODE : int16_t {
   MANUAL,
   AUTO,
   AUTO_PV,
@@ -77,19 +77,19 @@ enum WORK_MODE {
   OFF
 };
 
-ScheduleSlot coSlots[1]{
-    {{22, 0}, {6, 0}},
+ScheduleSlot coSlots[]{
+    {{23, 30}, {4, 0}},
     // {{13, 0}, {15, 0}}
 };
 
-ScheduleSlot cwuSlots[3] {
+ScheduleSlot cwuSlots[] {
     {{13, 0}, {14, 0}},
     {{22, 0}, {23, 0}},
     {{5, 0}, {6, 0}}
 };
 
-ScheduleSlot setAutoMode {
-  {0, 28}, {0, 30}
+ScheduleSlot updateManualMode {
+  {22, 00}, {22, 30}
 };
 
 namespace ArduinoJson {

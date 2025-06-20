@@ -34,17 +34,17 @@ export default class HP extends Component<{}, IState> {
 
 		return (
 			<div class="settings">
-				<h2>Ogrzewanie</h2>
+				<h2>CWU / CO</h2>
 				<section>
 					<div  class="resource">
 						<div class="heet">
 							<div class="heat head">
 								<div>
-									<span class ="label" style="min-width: 240px">{_data.time}</span>
+									<span class ="">{_data.time}</span>
 								</div>
 								<div>
-									<span class ="label" >Tryb pracy </span>
-									<span class ="field" style="min-width: 200px;" >{
+									<span class ="" >Tryb pracy </span>
+									<span class ="field">{
 											_data.work_mode == "M" ? "ręczny" :
 												_data.work_mode == "A" ? "automatyczny" :
 													_data.work_mode == "PV" ? "automatyczny z PV" :
@@ -219,14 +219,12 @@ export default class HP extends Component<{}, IState> {
 								</tbody>
 								<tfoot></tfoot>													
 							</table>
-
+						</div>
+						<hr/>
+						<div class="hp-data">
 							<table>
 								<thead></thead>
 								<tbody>
-									<tr>
-										<td class ="label">Compressor:</td>
-										<td class="field"><img title="Compressor on/off" src={ _hp.HPS ? swith_on : swith_off}/></td>
-									</tr>	
 									<tr>
 										<td class ="label">Hot pump:</td>
 										<td class="field"><img title="Hot circle state" src={ _hp.HCS ? swith_on : swith_off}/></td>
@@ -235,18 +233,16 @@ export default class HP extends Component<{}, IState> {
 										<td class ="label">Cold pump:</td>
 										<td class="field"><img title="Cold circle state" src={ _hp.CCS ? swith_on : swith_off}/></td>
 									</tr>
-									{/* <tr>
-										<td class ="label">CWU pump:</td>
-										<td class="field"><img title="CWU circle state" src={ _hp.CWUS ? swith_on : swith_off}/></td>
-									</tr> */}
-									{/* <tr>
-										<td class ="label">CO:</td>
-										<td class="field"><img title="CO on/off" src={ _hp.CO ? swith_on : swith_off}/></td>
-									</tr>									
+								</tbody>
+								<tfoot></tfoot>													
+							</table>
+							<table>
+								<thead></thead>
+								<tbody>
 									<tr>
-										<td class ="label">CWU:</td>
-										<td class="field"><img title="CWU on/off" src={ _hp.CWU ? swith_on : swith_off}/></td>
-									</tr> */}
+										<td class ="label">Compressor:</td>
+										<td class="field"><img title="Compressor on/off" src={ _hp.HPS ? swith_on : swith_off}/></td>
+									</tr>
 									<tr>
 										<td class ="label">Force:</td>
 										<td class="field"><img title="Force (t. min = t. max)" src={ _hp.F ? swith_on : swith_off}/></td>
