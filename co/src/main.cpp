@@ -171,11 +171,6 @@ void loop()
     case WORK_MODE::CWU:
       co_pomp = false;
       cwu_pomp = false;
-      if (schedule_cwu) {
-        sendRequest(SERIAL_OPERATION::SET_HP_FORCE_ON);
-      } else {
-        sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
-      }
       //cwu_pomp = true;
       break;  
     }
@@ -201,6 +196,11 @@ void loop()
       {
         sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("cwu_max")); 
         sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("cwu_max")-prefs.getDouble("cwu_min")); 
+        if (schedule_cwu) {
+          sendRequest(SERIAL_OPERATION::SET_HP_FORCE_ON);
+        } else {
+          sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
+        } 
       }
     }
 
