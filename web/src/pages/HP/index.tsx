@@ -81,18 +81,18 @@ export default class HP extends Component<{}, IState> {
 									<thead></thead>
 									<tbody>
 										<tr>
-											<td class ="label">CO:</td>
+											<td class ="label">T:</td>
 											<td className= {_data.co_pomp ? `field incorrect` : `field correct`}>
 													{_hp.Ttarget ? _hp.Ttarget : "---"}
 											</td>
 											
 										</tr>
-										<tr>
+										{/* <tr>
 											<td class ="label">CWU:</td>
 											<td className= { _data.cwu_pomp ? `field incorrect` : `field correct`}>
 													{_hp.Tcwu ? _hp.Tcwu : "---"}
 											</td>
-										</tr>
+										</tr> */}
 									</tbody>
 									<tfoot></tfoot>													
 								</table>
@@ -247,6 +247,36 @@ export default class HP extends Component<{}, IState> {
 										<td class ="label">Force:</td>
 										<td class="field"><img title="Force (t. min = t. max)" src={ _hp.F ? swith_on : swith_off}/></td>
 									</tr>
+								</tbody>
+								<tfoot></tfoot>													
+							</table>
+						</div>
+						<hr/>
+						<div class="hp-data">
+							<table>
+								<thead></thead>
+								<tbody>
+									<tr>
+										<td class ="label">Czas pracy:</td>
+										<td class="field">{_hp.last_heatpump_on ? Math.floor(_hp.last_heatpump_on / 60) + " min." : "---"}</td>
+									</tr>
+									<tr>
+										<td class ="label">Moc:</td>
+										<td class="field">{_hp.last_power ? _hp.last_power + " W" : "---"}</td>
+									</tr>
+									<tr>
+										<td class ="label">T. min:</td>
+										<td class="field">{_data.t_min ? _data.t_min : "---"}</td>
+									</tr>
+									<tr>
+										<td class ="label">T. max:</td>
+										<td class="field">{_data.t_max ? _data.t_max : "---"}</td>
+									</tr>
+									<tr>
+										<td class ="label">COP:</td>
+										<td class="field">{_data.cop ? _data.cop : "---"}</td>
+									</tr>
+
 								</tbody>
 								<tfoot></tfoot>													
 							</table>

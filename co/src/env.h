@@ -83,9 +83,9 @@ ScheduleSlot coSlots[]{
 };
 
 ScheduleSlot cwuSlots[] {
-    {{13, 0}, {14, 0}},
-    {{22, 0}, {23, 0}},
-    {{5, 0}, {6, 0}}
+    {{14, 0}, {14, 30}},
+    // {{22, 0}, {23, 0}},
+    {{5, 0}, {5, 30}}
 };
 
 ScheduleSlot updateManualMode {

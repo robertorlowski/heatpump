@@ -268,11 +268,11 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, bool cwu_on, DateTime rtcTime, Js
   {
     JsonObject hp = hpDoc["HP"].as<JsonObject>();
 
-    tft.setCursor(105, 33);
-    tft.println(hp["CO"] ? "ON" : "OFF");
+    // tft.setCursor(105, 33);
+    // tft.println(hp["CO"] ? "ON" : "OFF");
     
-    tft.setCursor(105, 53);
-    tft.printf("%s", hp["CWU"] ? "ON" : "OFF");
+    // tft.setCursor(105, 53);
+    // tft.printf("%s", hp["CWU"] ? "ON" : "OFF");
     
 
     tft.setTextSize(2);
@@ -288,7 +288,7 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, bool cwu_on, DateTime rtcTime, Js
     // CO + CWU
     if (hp["CO"].isNull())
     {
-      displayRow(tft, 1, -1, " CO:", "----");
+      displayRow(tft, 1, -1, "  T:", "----");
     }
     else
     {
@@ -296,7 +296,7 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, bool cwu_on, DateTime rtcTime, Js
       {
         tft.setTextColor(ST77XX_RED);
       }
-      displayRow(tft, 1, -1, " CO:", jsonAsString(hp["Ttarget"]));
+      displayRow(tft, 1, -1, "  T:", jsonAsString(hp["Ttarget"]));
       tft.setTextColor(ST77XX_WHITE);
     }
 
