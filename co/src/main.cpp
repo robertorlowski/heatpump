@@ -7,6 +7,7 @@
 #include <WiFi.h>
 #include "web/static_files.h"
 #include <WebServer.h>
+#include <HTTPClient.h>
 #include <Preferences.h>
 
 
@@ -34,6 +35,7 @@ WORK_MODE prevMode = MANUAL;
 JsonDocument emptyDoc;
 WebServer server(80);
 Preferences prefs;
+HTTPClient http;
 
 // temporary variables
 unsigned long _millisSchedule = -1;
@@ -55,6 +57,8 @@ void sendRequest(SERIAL_OPERATION so, double value = 0.0f);
 void collectDataFromSerial();
 void serverRoute(void);
 void forceRefresh(void);
+void putDataToCllud(void);
+void operatianExecute(JsonDocument doc);
 
 // main
 void setup()
@@ -128,9 +132,7 @@ void loop()
     jsonDocument["co_min"] = prefs.getDouble("co_min");
     jsonDocument["co_max"] = prefs.getDouble("co_max");
     jsonDocument["cwu_min"] = prefs.getDouble("cwu_min");
-    jsonDocument["cwu_max"] = prefs.getDouble("cwu_max");
-
-    
+    jsonDocument["cwu_max"] = prefs.getDouble("cwu_max");  
   }
   
   if ((_millisSchedule == -1) || (millis() - _millisSchedule > MILLIS_SCHEDULE))
@@ -141,19 +143,6 @@ void loop()
     // check co
     schedule_co = schedule(rtcTime, coSlots, (sizeof(coSlots) / sizeof(ScheduleSlot)));
     schedule_cwu = schedule(rtcTime, cwuSlots, (sizeof(cwuSlots) / sizeof(ScheduleSlot)));
-
-    if (prevMode != workMode) {
-      sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
-      
-      if (workMode == WORK_MODE::OFF) {
-        sendRequest(SERIAL_OPERATION::SET_HP_CO_OFF);
-        sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
-      }
-      else { 
-        sendRequest(SERIAL_OPERATION::SET_HP_CO_ON);
-      }
-    }
-    prevMode = workMode;
 
     switch (workMode)
     {
@@ -185,88 +174,99 @@ void loop()
     digitalWriteA(tft, RELAY_HP_CO, co_pomp);
 
 
-    if (workMode != WORK_MODE::OFF) 
-    {
-      if (!jsonDocument.isNull() && !jsonDocument["HP"].isNull())
-      {
-        JsonObject hp = jsonDocument["HP"].as<JsonObject>();
-        if (schedule_co && workMode != WORK_MODE::CWU 
-          && (jsonAsString(hp["Tmin"]).toDouble() != prefs.getDouble("co_min") || jsonAsString(hp["Tmax"]).toDouble() != prefs.getDouble("co_max"))
-        ) {
-          sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("co_max")); 
-          sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("co_max")-prefs.getDouble("co_min")); 
-        }
-        else if (jsonAsString(hp["Tmin"]).toDouble() != prefs.getDouble("cwu_min") || jsonAsString(hp["Tmax"]).toDouble() != prefs.getDouble("cwu_max")) 
-        {
-          sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("cwu_max")); 
-          sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("cwu_max")-prefs.getDouble("cwu_min")); 
+    JsonObject hp = jsonDocument["HP"].as<JsonObject>();
+    if ( !hp.isNull() ) {
+      if (hp["CO"] == 0) {
+        if (workMode != WORK_MODE::OFF) {
+          sendRequest(SERIAL_OPERATION::SET_HP_CO_ON);
         }
 
-        //włącmy pompę obiegową ciepłej wody by wymieszać wodę w zasobniku
-        if (!hp["HCS"] 
-          && co_pomp 
-          && !hp["Ttarget"].isNull()
-          && !hp["Tho"].isNull()
-          && (jsonAsString(hp["Ttarget"]).toDouble() - jsonAsString(hp["Tho"]).toDouble() ) > 3 
-          && !hp["HCS"].isNull() && !hp["HCS"]
-        ) {
-          sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_ON);
-        } else if (!hp["HCS"].isNull() && hp["HCS"] && co_pomp) {
-          sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
-        }
+      }
 
-        if (!hp["HPS"].isNull()) {
-          if (hp_prev != hp["HPS"] && !hp_prev ) {
-            jsonDocument["t_min"] = hp["Ttarget"];
-            jsonDocument["t_max"] = hp["Ttarget"];
-            jsonDocument["cop"].clear();
-          } 
-          hp_prev = hp["HPS"]; 
-
-          JsonObject temp_ = jsonDocument.as<JsonObject>();
-          if (hp["HPS"]) {
-            if (jsonDocument["t_min"].isNull()) {
-              jsonDocument["t_min"] = hp["Ttarget"]; 
-            } else if (jsonAsString(hp["Ttarget"]).toDouble() < jsonAsString(temp_["t_min"]).toDouble()) {
-              jsonDocument["t_min"] = hp["Ttarget"]; 
+      if (hp["CO"] == 1) {
+        if (workMode == WORK_MODE::OFF) {
+          sendRequest(SERIAL_OPERATION::SET_HP_CO_OFF);
+          sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
+        
+        } else if (workMode == WORK_MODE::CWU) {
+            if (schedule_cwu) {
+              sendRequest(SERIAL_OPERATION::SET_HP_FORCE_ON);
+            } else {
+              sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
             } 
-          } else {
-            if (!jsonDocument["t_min"].isNull() 
-              && !jsonDocument["t_max"].isNull() 
-              && !hp["last_power"].isNull() 
-              && !hp["last_heatpump_on"].isNull() )
-            {
-              double t_min = jsonAsString(jsonDocument["t_min"]).toDouble();
-              double t_max = jsonAsString(jsonDocument["t_max"]).toDouble();
-              double last_power = jsonAsString(hp["last_power"]).toDouble();
-              double last_heatpump_on = jsonAsString(hp["last_heatpump_on"]).toDouble();
-
-              double wymiennik = (4200 * 300 * (t_max - t_min)) / (last_heatpump_on / 3600);   
-
-              jsonDocument["cop"] = round((wymiennik / last_power)*100) / 100;
-            }
-          }
-
-
-          if (jsonDocument["t_max"].isNull()) {
-            jsonDocument["t_max"] = hp["Ttarget"]; 
-          } else if (jsonAsString(hp["Ttarget"]).toDouble() > jsonAsString(temp_["t_max"]).toDouble()) {
-            jsonDocument["t_max"] = hp["Ttarget"]; 
-          } 
-          
         }
       }
-    
 
-      if (schedule_cwu) {
-        sendRequest(SERIAL_OPERATION::SET_HP_FORCE_ON);
-      } else {
-        sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
-      } 
+      if (schedule_co && workMode != WORK_MODE::CWU 
+        && (jsonAsString(hp["Tmin"]).toDouble() != prefs.getDouble("co_min") || jsonAsString(hp["Tmax"]).toDouble() != prefs.getDouble("co_max"))
+      ) {
+        sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("co_max")); 
+        sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("co_max")-prefs.getDouble("co_min")); 
+      }
+      else if (jsonAsString(hp["Tmin"]).toDouble() != prefs.getDouble("cwu_min") || jsonAsString(hp["Tmax"]).toDouble() != prefs.getDouble("cwu_max")) 
+      {
+        sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("cwu_max")); 
+        sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("cwu_max")-prefs.getDouble("cwu_min")); 
+      }
+
+      //włącmy pompę obiegową ciepłej wody by wymieszać wodę w zasobniku ja jest włączone CO
+      if (!hp["HCS"] 
+        && co_pomp 
+        && !hp["Ttarget"].isNull()
+        && !hp["Tho"].isNull()
+        && (jsonAsString(hp["Ttarget"]).toDouble() - jsonAsString(hp["Tho"]).toDouble() ) > 3 
+        && !hp["HCS"].isNull() && !hp["HCS"]
+      ) {
+        sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_ON);
+      } else if (!hp["HCS"].isNull() && hp["HCS"] && co_pomp) {
+        sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
+      }
+
+      if (!hp["HPS"].isNull()) {
+        if (hp_prev != hp["HPS"] && !hp_prev ) {
+          jsonDocument["t_min"] = hp["Ttarget"];
+          jsonDocument["t_max"] = hp["Ttarget"];
+          jsonDocument["cop"].clear();
+        } 
+        hp_prev = hp["HPS"]; 
+      }
+
+      JsonObject temp_ = jsonDocument.as<JsonObject>();
+      if (!hp["Ttarget"].isNull()) {
+        if (jsonDocument["t_min"].isNull()) {
+          jsonDocument["t_min"] = hp["Ttarget"]; 
+        } else if (jsonAsString(hp["Ttarget"]).toDouble() < jsonAsString(temp_["t_min"]).toDouble()) {
+          jsonDocument["t_min"] = hp["Ttarget"]; 
+        } 
+          
+        if (jsonDocument["t_max"].isNull()) {
+          jsonDocument["t_max"] = hp["Ttarget"]; 
+        } else if (jsonAsString(hp["Ttarget"]).toDouble() > jsonAsString(temp_["t_max"]).toDouble()) {
+          jsonDocument["t_max"] = hp["Ttarget"]; 
+        } 
+      }
+
+      if (!jsonDocument["t_min"].isNull() 
+        && !jsonDocument["t_max"].isNull() 
+        && !hp["last_power"].isNull() 
+        && !hp["last_heatpump_on"].isNull() )
+      {
+        double t_min = jsonAsString(jsonDocument["t_min"]).toDouble();
+        double t_max = jsonAsString(jsonDocument["t_max"]).toDouble();
+        double last_power = jsonAsString(hp["last_power"]).toDouble();
+        double last_heatpump_on = jsonAsString(hp["last_heatpump_on"]).toDouble();
+
+        double wymiennik =  (double)(1.166) * 300 * (t_max - t_min);   
+        jsonDocument["cop"] = round((wymiennik / last_power)*100) / 100;
+      }
     }
 
     // print ALL
     PrintAll(tft, co_pomp, cwu_pomp, rtcTime, jsonDocument, workMode, pv);
+
+    if (!jsonDocument.isNull() && !jsonDocument["HP"].isNull()) {
+      putDataToCllud();
+    }
 
     if (workMode == WORK_MODE::MANUAL && checkSchedule(rtcTime, updateManualMode))
     {
@@ -290,7 +290,6 @@ void loop()
       jsonDocument["HP"] = emptyDoc;
       sendRequest(SERIAL_OPERATION::GET_HP_DATA);
     }
-
     _counter++;
   }
 
@@ -426,7 +425,6 @@ JsonDocument settings(void)
   {
     arrayJsonCwuSlots.add(cwuSlots[i]);
   }
-  
   
   JsonDocument jsonSettings;
   jsonSettings["settings"] = jsonscheduleSlots;
@@ -631,91 +629,7 @@ void serverRoute(void) {
         server.send(405, "text/plain", "Bad JSON");
         return;
       }
-      // printSerial(server.arg("plain"));
-      // delay(300);
-
-      JsonObject doc = ddd.as<JsonObject>();
-      //work_mode
-      if (!doc["work_mode"].isNull()) {
-        jsonAsString(doc["work_mode"]) == "M" ?
-          workMode = WORK_MODE::MANUAL :
-          jsonAsString(doc["work_mode"]) == "A" ?
-            workMode = WORK_MODE::AUTO :
-            jsonAsString(doc["work_mode"]) == "PV" ?
-              workMode = WORK_MODE::AUTO_PV :
-              jsonAsString(doc["work_mode"]) == "CWU" ?
-                workMode = WORK_MODE::CWU :
-                workMode = WORK_MODE::OFF;  
-      }
-
-      //co_min
-      if (!doc["co_min"].isNull() && jsonAsString(doc["co_min"]) != "" && jsonAsString(doc["co_min"]).toDouble() > 0) {
-        if (jsonAsString(doc["co_min"]).toDouble() < 0) {
-          return;
-        }
-        prefs.putDouble("co_min", jsonAsString(doc["co_min"]).toDouble());      
-      }
-      //co_max
-      if (!doc["co_max"].isNull() && jsonAsString(doc["co_max"]) != "" && jsonAsString(doc["co_max"]).toDouble() > 0) {
-        if (jsonAsString(doc["co_max"]).toDouble() < 0  || jsonAsString(doc["co_max"]).toDouble() > 50) {
-          return;
-        }
-        prefs.putDouble("co_max", jsonAsString(doc["co_max"]).toDouble());
-      }
-      //cwu_min
-      if (!doc["cwu_min"].isNull() && jsonAsString(doc["cwu_min"]) != "" && jsonAsString(doc["cwu_min"]).toDouble() > 0) {
-        if (jsonAsString(doc["cwu_min"]).toDouble() < 0) {
-          return;
-        }
-        prefs.putDouble("cwu_min", jsonAsString(doc["cwu_min"]).toDouble());
-      }
-      //cwu_max
-      if (!doc["cwu_max"].isNull() && jsonAsString(doc["cwu_max"]) != "" && jsonAsString(doc["cwu_max"]).toDouble() > 0) {
-        if (jsonAsString(doc["cwu_max"]).toDouble() < 0  || jsonAsString(doc["cwu_max"]).toDouble() > 50) {
-          return;
-        }
-        prefs.putDouble("cwu_max", jsonAsString(doc["cwu_max"]).toDouble());
-      }
-      
-      //sump_heater
-      if (!doc["sump_heater"].isNull() && jsonAsString(doc["sump_heater"]) != "" ) 
-      {
-        (jsonAsString(doc["sump_heater"]) == "1") ?
-          sendRequest(SERIAL_OPERATION ::SET_SUMP_HEATER_ON) :
-          sendRequest(SERIAL_OPERATION ::SET_SUMP_HEATER_OFF);
-        delay(1000);
-      }
-
-      //cold_pomp
-      if (!doc["cold_pomp"].isNull() && jsonAsString(doc["cold_pomp"]) != "" ) 
-      {
-        (jsonAsString(doc["cold_pomp"]) == "1") ? 
-          sendRequest(SERIAL_OPERATION ::SET_COLD_POMP_ON) :
-          sendRequest(SERIAL_OPERATION ::SET_COLD_POMP_OFF);
-        delay(1000);
-      }
-
-      //hot_pomp
-      if (!doc["hot_pomp"].isNull() && jsonAsString(doc["hot_pomp"]) != "" ) 
-      {
-        (jsonAsString(doc["hot_pomp"]) == "1") ?
-          sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_ON) : 
-          sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
-        delay(1000);
-      }
-
-      //force
-      if (!doc["force"].isNull() && jsonAsString(doc["force"]) != "" ) 
-      {
-        (jsonAsString(doc["force"]) == "1") ?
-          sendRequest(SERIAL_OPERATION ::SET_HP_FORCE_ON) : 
-          sendRequest(SERIAL_OPERATION ::SET_HP_FORCE_OFF);
-        delay(1000);
-      }
-
-      String data = "";
-      serializeJsonPretty(doc, data);
-      server.send(200, "application/json", data);
+      operatianExecute(ddd);
     }
   );
 
@@ -759,6 +673,123 @@ void serverRoute(void) {
     );
   }
 }
+
+void operatianExecute(JsonDocument ddd) {
+  
+  JsonObject doc  = ddd.as<JsonObject>();
+
+  //work_mode
+  if (!doc["work_mode"].isNull()) {
+    jsonAsString(doc["work_mode"]) == "M" ?
+      workMode = WORK_MODE::MANUAL :
+      jsonAsString(doc["work_mode"]) == "A" ?
+        workMode = WORK_MODE::AUTO :
+        jsonAsString(doc["work_mode"]) == "PV" ?
+          workMode = WORK_MODE::AUTO_PV :
+          jsonAsString(doc["work_mode"]) == "CWU" ?
+            workMode = WORK_MODE::CWU :
+            workMode = WORK_MODE::OFF;  
+  }
+
+  //co_min
+  if (!doc["co_min"].isNull() && jsonAsString(doc["co_min"]) != "" && jsonAsString(doc["co_min"]).toDouble() > 0) {
+    if (jsonAsString(doc["co_min"]).toDouble() < 0) {
+      return;
+    }
+    prefs.putDouble("co_min", jsonAsString(doc["co_min"]).toDouble());      
+  }
+  //co_max
+  if (!doc["co_max"].isNull() && jsonAsString(doc["co_max"]) != "" && jsonAsString(doc["co_max"]).toDouble() > 0) {
+    if (jsonAsString(doc["co_max"]).toDouble() < 0  || jsonAsString(doc["co_max"]).toDouble() > 50) {
+      return;
+    }
+    prefs.putDouble("co_max", jsonAsString(doc["co_max"]).toDouble());
+  }
+  //cwu_min
+  if (!doc["cwu_min"].isNull() && jsonAsString(doc["cwu_min"]) != "" && jsonAsString(doc["cwu_min"]).toDouble() > 0) {
+    if (jsonAsString(doc["cwu_min"]).toDouble() < 0) {
+      return;
+    }
+    prefs.putDouble("cwu_min", jsonAsString(doc["cwu_min"]).toDouble());
+  }
+  //cwu_max
+  if (!doc["cwu_max"].isNull() && jsonAsString(doc["cwu_max"]) != "" && jsonAsString(doc["cwu_max"]).toDouble() > 0) {
+    if (jsonAsString(doc["cwu_max"]).toDouble() < 0  || jsonAsString(doc["cwu_max"]).toDouble() > 50) {
+      return;
+    }
+    prefs.putDouble("cwu_max", jsonAsString(doc["cwu_max"]).toDouble());
+  }
+  
+  //sump_heater
+  if (!doc["sump_heater"].isNull() && jsonAsString(doc["sump_heater"]) != "" ) 
+  {
+    (jsonAsString(doc["sump_heater"]) == "1") ?
+      sendRequest(SERIAL_OPERATION ::SET_SUMP_HEATER_ON) :
+      sendRequest(SERIAL_OPERATION ::SET_SUMP_HEATER_OFF);
+    delay(1000);
+  }
+
+  //cold_pomp
+  if (!doc["cold_pomp"].isNull() && jsonAsString(doc["cold_pomp"]) != "" ) 
+  {
+    (jsonAsString(doc["cold_pomp"]) == "1") ? 
+      sendRequest(SERIAL_OPERATION ::SET_COLD_POMP_ON) :
+      sendRequest(SERIAL_OPERATION ::SET_COLD_POMP_OFF);
+    delay(1000);
+  }
+
+  //hot_pomp
+  if (!doc["hot_pomp"].isNull() && jsonAsString(doc["hot_pomp"]) != "" ) 
+  {
+    (jsonAsString(doc["hot_pomp"]) == "1") ?
+      sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_ON) : 
+      sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
+    delay(1000);
+  }
+
+  //force
+  if (!doc["force"].isNull() && jsonAsString(doc["force"]) != "" ) 
+  {
+    (jsonAsString(doc["force"]) == "1") ?
+      sendRequest(SERIAL_OPERATION ::SET_HP_FORCE_ON) : 
+      sendRequest(SERIAL_OPERATION ::SET_HP_FORCE_OFF);
+    delay(1000);
+  }
+
+  String data = "";
+  serializeJsonPretty(doc, data);
+  server.send(200, "application/json", data);
+}
+
+void putDataToCllud(void) {
+
+  if (WiFi.status() == WL_CONNECTED) {
+    http.begin("https://chpc-web.onrender.com/api/hp/add");  // Adres serwera lub API
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Cache-Control", "no-cache");
+
+    String payload;
+    serializeJsonPretty(jsonDocument, payload);
+    int httpCode = http.POST(payload);
+    http.setTimeout(2000);
+    String response = http.getString();
+
+    JsonDocument ddd;
+    DeserializationError error = deserializeJson(ddd, response);
+    if (error) {
+      printSerial("Bad JSON");
+      delay(300);
+    } else {
+      operatianExecute(ddd["operation"]);
+      printSerial(ddd["operation"]);
+    }
+    http.end();
+  } else {
+    printSerial("Brak połączenia WiFi");
+    delay(300);
+  }
+}
+
 
 // void forceRefresh(void) {
 //   _counter = 0;
