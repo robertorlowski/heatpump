@@ -16,7 +16,7 @@
 // #define T_CO_ON 30.0
 
 // const's
-const int MILLIS_SCHEDULE = 30000;
+constexpr int MILLIS_SCHEDULE = 30000;
 
 const char devID = 0x10;
 const size_t JSON_BUFFER_SIZE = 1024;
@@ -56,11 +56,11 @@ void sendRequest(SERIAL_OPERATION so, double value = 0.0f);
 void collectDataFromSerial();
 void serverRoute(void);
 void forceRefresh(void);
-void putHpDataToCllud(void);
-void operatianExecute(JsonDocument doc);
-void putHpDataToCllud(void);
-String putDataToCllud(String path, JsonDocument data);
-void operatianExecute(JsonDocument ddd);
+void putHpDataToCloud(void);
+void operationExecute(JsonDocument doc);
+void putHpDataToCloud(void);
+String putDataToCloud(String path, JsonDocument data);
+void operationExecute(JsonDocument ddd);
 
 // main
 void setup()
@@ -108,8 +108,8 @@ void setup()
      prefs.putShort("workMode", workMode);
   }
 
-  //zapis danych ustawień do chmury;
-  putDataToCllud("/settings/set", settings());
+  //Zapis danych ustawień do chmury:
+  putDataToCloud("/settings/set", settings());
 }
 
 void loop()
@@ -214,7 +214,7 @@ void loop()
         sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("cwu_max")-prefs.getDouble("cwu_min")); 
       }
 
-      //włącmy pompę obiegową ciepłej wody by wymieszać wodę w zasobniku ja jest włączone CO
+      //Włączamy pompę obiegową ciepłej wody, aby wymieszać wodę w zasobniku, gdy jest włączone CO
       if (!hp["HCS"] 
         && co_pomp 
         && !hp["Ttarget"].isNull()
@@ -270,7 +270,7 @@ void loop()
     PrintAll(tft, co_pomp, cwu_pomp, rtcTime, jsonDocument, workMode, pv);
 
     if (!jsonDocument.isNull() && !jsonDocument["HP"].isNull()) {
-      putHpDataToCllud();
+      putHpDataToCloud();
     }
 
     if (workMode == WORK_MODE::MANUAL && checkSchedule(rtcTime, updateManualMode))
@@ -634,7 +634,7 @@ void serverRoute(void) {
         server.send(405, "text/plain", "Bad JSON");
         return;
       }
-      operatianExecute(ddd);
+      operationExecute(ddd);
     }
   );
 
@@ -679,7 +679,7 @@ void serverRoute(void) {
   }
 }
 
-void operatianExecute(JsonDocument ddd) {
+void operationExecute(JsonDocument ddd) {
   
   JsonObject doc  = ddd.as<JsonObject>();
 
@@ -767,8 +767,8 @@ void operatianExecute(JsonDocument ddd) {
 }
 
 
-void putHpDataToCllud(void) {
-  String response = putDataToCllud("hp/add", jsonDocument);
+void putHpDataToCloud(void) {
+  String response = putDataToCloud("hp/add", jsonDocument);
   if (response == "" ) {
     return;
   } 
@@ -781,10 +781,10 @@ void putHpDataToCllud(void) {
     return;
   }  
   printSerial(ddd["operation"]);
-  operatianExecute(ddd["operation"]);
+  operationExecute(ddd["operation"]);
 }
 
-String putDataToCllud(String path, JsonDocument data) {
+String putDataToCloud(String path, JsonDocument data) {
 
   if (WiFi.status() != WL_CONNECTED) {
       printSerial("Brak połączenia WiFi");
@@ -811,14 +811,6 @@ String putDataToCllud(String path, JsonDocument data) {
   }   
   return http.getString();
 }
-
-
-
-
-// void forceRefresh(void) {
-//   _counter = 0;
-//   _millisSchedule -= MILLIS_SCHEDULE;
-// }
 
 /*
 {"Tbe":"23.6","Tae":"23.3","Tco":"23.7","Tho":"23.4","Ttarget":"24.8","Tsump":"23.9","EEV_dt":"0.0","Tcwu":"25.0","Tmax":"18.5","Tmin":"13.0","Tcwu_max":"26.0","Tcwu_min":"23.0","Watts":"72","EEV":"2.0","EEV_pos":"50","HCS":0,"CCS":0,"HPS":0,"F":0,"CWUS":0,"CWU":1,"CO":1}
