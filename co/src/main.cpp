@@ -10,7 +10,6 @@
 #include <HTTPClient.h>
 #include <Preferences.h>
 
-
 #define PV_DEVICE_ID 0x69
 #define PV_count 5
 #define HP_FORCE_ON 2000
@@ -57,8 +56,11 @@ void sendRequest(SERIAL_OPERATION so, double value = 0.0f);
 void collectDataFromSerial();
 void serverRoute(void);
 void forceRefresh(void);
-void putDataToCllud(void);
+void putHpDataToCllud(void);
 void operatianExecute(JsonDocument doc);
+void putHpDataToCllud(void);
+String putDataToCllud(String path, JsonDocument data);
+void operatianExecute(JsonDocument ddd);
 
 // main
 void setup()
@@ -105,6 +107,9 @@ void setup()
   } else {
      prefs.putShort("workMode", workMode);
   }
+
+  //zapis danych ustawień do chmury;
+  putDataToCllud("/settings/set", settings());
 }
 
 void loop()
@@ -265,7 +270,7 @@ void loop()
     PrintAll(tft, co_pomp, cwu_pomp, rtcTime, jsonDocument, workMode, pv);
 
     if (!jsonDocument.isNull() && !jsonDocument["HP"].isNull()) {
-      putDataToCllud();
+      putHpDataToCllud();
     }
 
     if (workMode == WORK_MODE::MANUAL && checkSchedule(rtcTime, updateManualMode))
@@ -761,34 +766,53 @@ void operatianExecute(JsonDocument ddd) {
   server.send(200, "application/json", data);
 }
 
-void putDataToCllud(void) {
 
-  if (WiFi.status() == WL_CONNECTED) {
-    http.begin("https://chpc-web.onrender.com/api/hp/add");  // Adres serwera lub API
-    http.addHeader("Content-Type", "application/json");
-    http.addHeader("Cache-Control", "no-cache");
+void putHpDataToCllud(void) {
+  String response = putDataToCllud("hp/add", jsonDocument);
+  if (response == "" ) {
+    return;
+  } 
 
-    String payload;
-    serializeJsonPretty(jsonDocument, payload);
-    int httpCode = http.POST(payload);
-    http.setTimeout(2000);
-    String response = http.getString();
-
-    JsonDocument ddd;
-    DeserializationError error = deserializeJson(ddd, response);
-    if (error) {
-      printSerial("Bad JSON");
-      delay(300);
-    } else {
-      operatianExecute(ddd["operation"]);
-      printSerial(ddd["operation"]);
-    }
-    http.end();
-  } else {
-    printSerial("Brak połączenia WiFi");
+  JsonDocument ddd;
+  DeserializationError error = deserializeJson(ddd, response);
+  if (error) {
+    printSerial("Bad JSON");
     delay(300);
-  }
+    return;
+  }  
+  printSerial(ddd["operation"]);
+  operatianExecute(ddd["operation"]);
 }
+
+String putDataToCllud(String path, JsonDocument data) {
+
+  if (WiFi.status() != WL_CONNECTED) {
+      printSerial("Brak połączenia WiFi");
+      delay(100);
+      return "";
+  }
+
+  http.begin("https://chpc-web.onrender.com/api/" + path);  // Adres serwera lub API
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Cache-Control", "no-cache");
+
+  String payload;
+  serializeJsonPretty(data, payload);
+  
+  http.setTimeout(1000);
+  int httpCode = http.POST(payload);
+  http.end();
+
+  if (httpCode < 0 ) {
+    char buffer[128];  // bufor na wynik formatowania
+    sprintf(buffer, "Błąd żądania: %s\n", http.errorToString(httpCode).c_str());
+    printSerial(buffer);
+    return "";
+  }   
+  return http.getString();
+}
+
+
 
 
 // void forceRefresh(void) {
