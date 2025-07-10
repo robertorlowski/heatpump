@@ -4,6 +4,12 @@
 #include <Adafruit_ST7735.h> // Hardware-specific library for ST7735
 #include <ArduinoJson.h>
 
+
+
+const char devID = 0x10;
+#define PV_DEVICE_ID 0x69
+
+
 #define BD
 
 // ESP32-WROOM
@@ -66,7 +72,9 @@ enum SERIAL_OPERATION {
   SET_HOT_POMP_ON,
   SET_HOT_POMP_OFF,
   SET_T_SETPOINT_CO,
-  SET_T_DELTA_CO
+  SET_T_DELTA_CO,
+  SET_EEV_MAXPULSES_OPEN,
+  SET_WORKING_WATT
 };
 
 enum WORK_MODE : int16_t {

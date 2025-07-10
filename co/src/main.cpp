@@ -3,14 +3,13 @@
 #include <HardwareSerial.h>
 #include <env.h>
 #include <ArduinoJson.h>
-#include <FastCRC.h>
 #include <WiFi.h>
 #include "web/static_files.h"
 #include <WebServer.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
 
-#define PV_DEVICE_ID 0x69
+
 #define PV_count 5
 #define HP_FORCE_ON 2000
 // #define T_CO_ON 30.0
@@ -18,11 +17,10 @@
 // const's
 constexpr int MILLIS_SCHEDULE = 30000;
 
-const char devID = 0x10;
+
 const size_t JSON_BUFFER_SIZE = 1024;
 
 // global variables
-FastCRC16 CRC16;
 RTC_DS3231 rtc;
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_CLK, TFT_RST);
 JsonDocument jsonDocument;
@@ -52,7 +50,6 @@ JsonDocument settings(void);
 void sendDataToSerial(char operation);
 long _getPVData(uint8_t pv_nr, char *inData, uint8_t b_start, uint8_t b_count);
 void collectDataFromPV(char inData[1024]);
-void sendRequest(SERIAL_OPERATION so, double value = 0.0f);
 void collectDataFromSerial();
 void serverRoute(void);
 void forceRefresh(void);
@@ -183,21 +180,21 @@ void loop()
     if ( !hp.isNull() ) {
       if (hp["CO"] == 0) {
         if (workMode != WORK_MODE::OFF) {
-          sendRequest(SERIAL_OPERATION::SET_HP_CO_ON);
+          serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_CO_ON);
         }
 
       }
 
       if (hp["CO"] == 1) {
         if (workMode == WORK_MODE::OFF) {
-          sendRequest(SERIAL_OPERATION::SET_HP_CO_OFF);
-          sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
+          serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_CO_OFF);
+          serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
         
         } else if (workMode == WORK_MODE::CWU) {
             if (schedule_cwu) {
-              sendRequest(SERIAL_OPERATION::SET_HP_FORCE_ON);
+              serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_ON);
             } else {
-              sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
+              serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
             } 
         }
       }
@@ -205,13 +202,13 @@ void loop()
       if (schedule_co && workMode != WORK_MODE::CWU 
         && (jsonAsString(hp["Tmin"]).toDouble() != prefs.getDouble("co_min") || jsonAsString(hp["Tmax"]).toDouble() != prefs.getDouble("co_max"))
       ) {
-        sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("co_max")); 
-        sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("co_max")-prefs.getDouble("co_min")); 
+        serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("co_max")); 
+        serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("co_max")-prefs.getDouble("co_min")); 
       }
       else if (jsonAsString(hp["Tmin"]).toDouble() != prefs.getDouble("cwu_min") || jsonAsString(hp["Tmax"]).toDouble() != prefs.getDouble("cwu_max")) 
       {
-        sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("cwu_max")); 
-        sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("cwu_max")-prefs.getDouble("cwu_min")); 
+        serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("cwu_max")); 
+        serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("cwu_max")-prefs.getDouble("cwu_min")); 
       }
 
       //Włączamy pompę obiegową ciepłej wody, aby wymieszać wodę w zasobniku, gdy jest włączone CO
@@ -222,9 +219,9 @@ void loop()
         && (jsonAsString(hp["Ttarget"]).toDouble() - jsonAsString(hp["Tho"]).toDouble() ) > 3 
         && !hp["HCS"].isNull() && !hp["HCS"]
       ) {
-        sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_ON);
+        serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_ON);
       } else if (!hp["HCS"].isNull() && hp["HCS"] && co_pomp) {
-        sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
+        serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
       }
 
       if (!hp["HPS"].isNull()) {
@@ -288,12 +285,12 @@ void loop()
         pv.total_prod_today = 0;
         pv.temperature = 0;
         jsonDocument["PV"] = emptyDoc;
-        sendRequest(SERIAL_OPERATION::GET_PV_DATA_1);
+        serialOpertion = sendRequest(SERIAL_OPERATION::GET_PV_DATA_1);
     }
     else
     {
       jsonDocument["HP"] = emptyDoc;
-      sendRequest(SERIAL_OPERATION::GET_HP_DATA);
+      serialOpertion = sendRequest(SERIAL_OPERATION::GET_HP_DATA);
     }
     _counter++;
   }
@@ -324,26 +321,24 @@ void collectDataFromSerial()
     {
       if (serialOpertion == SERIAL_OPERATION::GET_PV_DATA_1) {
         collectDataFromPV(inData);
-        sendRequest(SERIAL_OPERATION::GET_PV_DATA_2);
+        serialOpertion = sendRequest(SERIAL_OPERATION::GET_PV_DATA_2);
       } 
       else if (serialOpertion == SERIAL_OPERATION::GET_PV_DATA_2)
       {        
         collectDataFromPV(inData);
         if (pv.pv_power && (pv.total_power >= HP_FORCE_ON))
         {
-          sendRequest( (pv.pv_power  && (workMode == AUTO_PV) ) ? 
+         serialOpertion =  sendRequest( (pv.pv_power  && (workMode == AUTO_PV) ) ? 
             SERIAL_OPERATION::SET_HP_FORCE_ON : 
             SERIAL_OPERATION::SET_HP_FORCE_OFF);
         } 
         else 
         {
-          sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
+         serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
         }
         pv.pv_power = pv.total_power >= HP_FORCE_ON;
         jsonDocument["pv_power"] = pv.pv_power;
         jsonDocument["PV"] = pv;
-        
-        // printSerial(jsonDocument["PV"]);
       }
     }
   }
@@ -363,17 +358,13 @@ void collectDataFromPV(char inData[1024])
   {
     // printSerial("NR " + String(i) + " total_power " + String(_getPVData(i, inData, 19, 2)/10));
     pv.total_power += _getPVData(i, inData, 19, 2)/10;
-
     // printSerial("NR " + String(i) + " total_prod_today " +  String(_getPVData(i, inData, 21, 2)));
     pv.total_prod_today += _getPVData(i, inData, 21, 2);
-
     // printSerial("NR " + String(i) + " total_prod " +  String(_getPVData(i, inData, 23, 4)));
     pv.total_prod += _getPVData(i, inData, 23, 4);
-
     // printSerial("NR " + String(i) + " temperature 0 " +  String(_getPVData(i, inData, 27, 2) ));
     // printSerial("NR " + String(i) + " temperature 1 " +  String(_getPVData(i, inData, 27, 1) ));
     // printSerial("NR " + String(i) + " temperature 2 " +  String(_getPVData(i, inData, 28, 1) ));
-
     pv.temperature = _getPVData(i, inData, 27, 2) / 10;   
     // printSerial("NR " + String(i) + " temperature " +  String(((_getPVData(i, inData, 28, 1) + _getPVData(i, inData, 27, 1)) / 10)));
     // pv.temperature = ((_getPVData(i, inData, 28, 1) + _getPVData(i, inData, 27, 1)) / 10);
@@ -444,180 +435,6 @@ long _getPVData(uint8_t pv_nr, char *inData, uint8_t b_start, uint8_t b_count)
     ret += (int)inData[b_start + i + pv_nr * 40] << ((b_count - i - 1) * 8);
 
   return ret;
-}
-
-void sendRequest(SERIAL_OPERATION so, double value)
-{
-  // printSerial("Operation:" + String(so));
-  delay(1000);
-  uint8_t buffer[10];
-  unsigned int crcXmodem;
-  serialOpertion = so;
-
-  switch (so)
-  {
-  case GET_HP_DATA:
-    buffer[0] = 0x41;
-    buffer[1] = 0x01;
-    buffer[2] = 0x00;
-    buffer[3] = 0x00;
-    buffer[4] = 0xFF;
-    writeSerial(buffer, 5);
-    return;
-
-  case GET_PV_DATA_1:
-    buffer[0] = PV_DEVICE_ID;
-    buffer[1] = 0x03;
-    buffer[2] = highByte(0x1000);
-    buffer[3] = lowByte(0x1000);
-    buffer[4] = highByte(0x0280);
-    buffer[5] = lowByte(0x0280);
-    crcXmodem = CRC16.modbus(buffer, 6);
-    buffer[6] = highByte(crcXmodem);
-    buffer[7] = lowByte(crcXmodem);
-    writeSerial(buffer, 8);
-    return;
-
-  case GET_PV_DATA_2:
-    buffer[0] = PV_DEVICE_ID;
-    buffer[1] = 0x03;
-    buffer[2] = highByte(0x1000 + 5 * 40);
-    buffer[3] = lowByte(0x1000 + 5 * 40);
-    buffer[4] = highByte(0x0320);
-    buffer[5] = lowByte(0x0320);
-    crcXmodem = CRC16.modbus(buffer, 6);
-    buffer[6] = highByte(crcXmodem);
-    buffer[7] = lowByte(crcXmodem);
-    writeSerial(buffer, 8);
-    return;
-
-  case SET_HP_FORCE_ON:
-    buffer[0] = 0x41;
-    buffer[1] = 0x03;
-    buffer[2] = 0x01;
-    buffer[3] = 0x00;
-    buffer[4] = 0xFF;
-    writeSerial(buffer, 5);
-    return;
-
-  case SET_HP_FORCE_OFF:
-    buffer[0] = 0x41;
-    buffer[1] = 0x03;
-    buffer[2] = 0x00;
-    buffer[3] = 0x00;
-    buffer[4] = 0xFF;
-    writeSerial(buffer, 5);
-    return;
-
-  case SET_HP_CO_ON:
-    buffer[0] = 0x41;
-    buffer[1] = 0x0C;
-    buffer[2] = 0x01;
-    buffer[3] = 0x00;
-    buffer[4] = 0xFF;
-    writeSerial(buffer, 5);
-    return;
-
-  case SET_HP_CO_OFF:
-    buffer[0] = 0x41;
-    buffer[1] = 0x0C;
-    buffer[2] = 0x00;
-    buffer[3] = 0x00;
-    buffer[4] = 0xFF;
-    writeSerial(buffer, 5);
-    return;
-
-  case SET_HP_CWU_ON:
-    buffer[0] = 0x41;
-    buffer[1] = 0x0D;
-    buffer[2] = 0x01;
-    buffer[3] = 0x00;
-    buffer[4] = 0xFF;
-    writeSerial(buffer, 5);
-    return;
-
-  case SET_HP_CWU_OFF:
-    buffer[0] = 0x41;
-    buffer[1] = 0x0D;
-    buffer[2] = 0x00;
-    buffer[3] = 0x00;
-    buffer[4] = 0xFF;
-    writeSerial(buffer, 5);
-    return;
-
-  case SET_SUMP_HEATER_ON:
-    buffer[0] = 0x41;
-    buffer[1] = 0x0B;
-    buffer[2] = 0x01;
-    buffer[3] = 0x00;
-    buffer[4] = 0xFF;
-    writeSerial(buffer, 5);
-    return;
-
-  case SET_SUMP_HEATER_OFF:
-    buffer[0] = 0x41;
-    buffer[1] = 0x0B;
-    buffer[2] = 0x00;
-    buffer[3] = 0x00;
-    buffer[4] = 0xFF;
-    writeSerial(buffer, 5);
-    return;
-
-  case SET_COLD_POMP_ON:
-    buffer[0] = 0x41;
-    buffer[1] = 0x0A;
-    buffer[2] = 0x01;
-    buffer[3] = 0x00;
-    buffer[4] = 0xFF;
-    writeSerial(buffer, 5);
-    return;
-
-  case SET_COLD_POMP_OFF:
-    buffer[0] = 0x41;
-    buffer[1] = 0x0A;
-    buffer[2] = 0x00;
-    buffer[3] = 0x00;
-    buffer[4] = 0xFF;
-    writeSerial(buffer, 5);
-    return;
-
-  case SET_HOT_POMP_ON:
-    buffer[0] = 0x41;
-    buffer[1] = 0x09;
-    buffer[2] = 0x01;
-    buffer[3] = 0x00;
-    buffer[4] = 0xFF;
-    writeSerial(buffer, 5);
-    return;
-
-  case SET_HOT_POMP_OFF:
-    buffer[0] = 0x41;
-    buffer[1] = 0x09;
-    buffer[2] = 0x00;
-    buffer[3] = 0x00;
-    buffer[4] = 0xFF;
-    writeSerial(buffer, 5);
-    return;
-
-  case SET_T_SETPOINT_CO:
-    buffer[0] = 0x41;
-    buffer[1] = 0x04;
-    buffer[2] = (uint8_t)value;
-    buffer[3] = (uint8_t)roundf((value - (uint8_t)value) * 100.0f);
-    buffer[4] = 0xFF;
-    writeSerial(buffer, 5);
-    return;
-
-  case SET_T_DELTA_CO:
-    buffer[0] = 0x41;
-    buffer[1] = 0x05;
-    buffer[2] = (uint8_t)value;
-    buffer[3] = (uint8_t)roundf((value - (uint8_t)value) * 100.0f);
-    buffer[4] = 0xFF;
-    writeSerial(buffer, 5);
-    return;
-  }
-  
 }
 
 void serverRoute(void) {
@@ -729,38 +546,47 @@ void operationExecute(JsonDocument ddd) {
   if (!doc["sump_heater"].isNull() && jsonAsString(doc["sump_heater"]) != "" ) 
   {
     (jsonAsString(doc["sump_heater"]) == "1") ?
-      sendRequest(SERIAL_OPERATION ::SET_SUMP_HEATER_ON) :
-      sendRequest(SERIAL_OPERATION ::SET_SUMP_HEATER_OFF);
-    delay(1000);
+      serialOpertion = sendRequest(SERIAL_OPERATION::SET_SUMP_HEATER_ON) :
+      serialOpertion = sendRequest(SERIAL_OPERATION::SET_SUMP_HEATER_OFF);
   }
 
   //cold_pomp
   if (!doc["cold_pomp"].isNull() && jsonAsString(doc["cold_pomp"]) != "" ) 
   {
     (jsonAsString(doc["cold_pomp"]) == "1") ? 
-      sendRequest(SERIAL_OPERATION ::SET_COLD_POMP_ON) :
-      sendRequest(SERIAL_OPERATION ::SET_COLD_POMP_OFF);
-    delay(1000);
+      serialOpertion = sendRequest(SERIAL_OPERATION::SET_COLD_POMP_ON) :
+      serialOpertion = sendRequest(SERIAL_OPERATION::SET_COLD_POMP_OFF);
   }
 
   //hot_pomp
   if (!doc["hot_pomp"].isNull() && jsonAsString(doc["hot_pomp"]) != "" ) 
   {
     (jsonAsString(doc["hot_pomp"]) == "1") ?
-      sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_ON) : 
-      sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
-    delay(1000);
+      serialOpertion = sendRequest(SERIAL_OPERATION::SET_HOT_POMP_ON) : 
+      serialOpertion = sendRequest(SERIAL_OPERATION::SET_HOT_POMP_OFF);
   }
 
   //force
   if (!doc["force"].isNull() && jsonAsString(doc["force"]) != "" ) 
   {
     (jsonAsString(doc["force"]) == "1") ?
-      sendRequest(SERIAL_OPERATION ::SET_HP_FORCE_ON) : 
-      sendRequest(SERIAL_OPERATION ::SET_HP_FORCE_OFF);
-    delay(1000);
+      serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_ON) : 
+      serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
   }
 
+  //working_watt
+  if (!doc["working_watt"].isNull() && jsonAsString(doc["working_watt"]) != "" ) 
+  {
+    serialOpertion = sendRequest(SERIAL_OPERATION::SET_WORKING_WATT, jsonAsString(doc["working_watt"]).toDouble());  
+  }
+
+  //EEV_max_pulse_open
+  if (!doc["eev_max_pulse_open"].isNull() && jsonAsString(doc["eev_max_pulse_open"]) != "" ) 
+  {
+    serialOpertion = sendRequest(SERIAL_OPERATION::SET_EEV_MAXPULSES_OPEN, jsonAsString(doc["eev_max_pulse_open"]).toDouble());  
+  }
+
+  
   String data = "";
   serializeJsonPretty(doc, data);
   server.send(200, "application/json", data);

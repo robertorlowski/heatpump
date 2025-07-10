@@ -3,6 +3,7 @@
 #include "WiFi.h"
 #include <NTPClient.h>
 #include <env.h>
+#include <FastCRC.h>
 
 const int SERIAL_BUFFER = 1024;
 
@@ -17,6 +18,7 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, DateTime rtcTime, JsonDocument hp
 void writeSerial(const uint8_t *buffer, uint8_t length);
 void printSerial(String str);
 int getDataFromSerial(char *_inData);
+SERIAL_OPERATION sendRequest(SERIAL_OPERATION so, double value = 0.0f);
 
 String jsonAsString(JsonVariant json);
 
@@ -347,4 +349,198 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, bool cwu_on, DateTime rtcTime, Js
     displayRow(tft, xx, 0, "HC.s:",  hp["HCS"].isNull() ? "" : hp["HCS"] ? "ON" : "OFF");
     displayRow(tft, xx++, 1, "CC.s:", hp["CCS"].isNull() ? "" : hp["CCS"] ? "ON" : "OFF");
   }
+}
+
+
+SERIAL_OPERATION sendRequest(SERIAL_OPERATION so, double value)
+{
+  FastCRC16 CRC16;
+  delay(500);
+  uint8_t buffer[10];
+  unsigned int crcXmodem;
+
+  switch (so)
+  {
+  case GET_HP_DATA:
+    buffer[0] = 0x41;
+    buffer[1] = 0x01;
+    buffer[2] = 0x00;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case GET_PV_DATA_1:
+    buffer[0] = PV_DEVICE_ID;
+    buffer[1] = 0x03;
+    buffer[2] = highByte(0x1000);
+    buffer[3] = lowByte(0x1000);
+    buffer[4] = highByte(0x0280);
+    buffer[5] = lowByte(0x0280);
+    crcXmodem = CRC16.modbus(buffer, 6);
+    buffer[6] = highByte(crcXmodem);
+    buffer[7] = lowByte(crcXmodem);
+    writeSerial(buffer, 8);
+    break;
+
+  case GET_PV_DATA_2:
+    buffer[0] = PV_DEVICE_ID;
+    buffer[1] = 0x03;
+    buffer[2] = highByte(0x1000 + 5 * 40);
+    buffer[3] = lowByte(0x1000 + 5 * 40);
+    buffer[4] = highByte(0x0320);
+    buffer[5] = lowByte(0x0320);
+    crcXmodem = CRC16.modbus(buffer, 6);
+    buffer[6] = highByte(crcXmodem);
+    buffer[7] = lowByte(crcXmodem);
+    writeSerial(buffer, 8);
+    break;
+
+  case SET_HP_FORCE_ON:
+    buffer[0] = 0x41;
+    buffer[1] = 0x03;
+    buffer[2] = 0x01;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_HP_FORCE_OFF:
+    buffer[0] = 0x41;
+    buffer[1] = 0x03;
+    buffer[2] = 0x00;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_HP_CO_ON:
+    buffer[0] = 0x41;
+    buffer[1] = 0x0C;
+    buffer[2] = 0x01;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_HP_CO_OFF:
+    buffer[0] = 0x41;
+    buffer[1] = 0x0C;
+    buffer[2] = 0x00;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_HP_CWU_ON:
+    buffer[0] = 0x41;
+    buffer[1] = 0x0D;
+    buffer[2] = 0x01;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_HP_CWU_OFF:
+    buffer[0] = 0x41;
+    buffer[1] = 0x0D;
+    buffer[2] = 0x00;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_SUMP_HEATER_ON:
+    buffer[0] = 0x41;
+    buffer[1] = 0x0B;
+    buffer[2] = 0x01;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_SUMP_HEATER_OFF:
+    buffer[0] = 0x41;
+    buffer[1] = 0x0B;
+    buffer[2] = 0x00;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_COLD_POMP_ON:
+    buffer[0] = 0x41;
+    buffer[1] = 0x0A;
+    buffer[2] = 0x01;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_COLD_POMP_OFF:
+    buffer[0] = 0x41;
+    buffer[1] = 0x0A;
+    buffer[2] = 0x00;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_HOT_POMP_ON:
+    buffer[0] = 0x41;
+    buffer[1] = 0x09;
+    buffer[2] = 0x01;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_HOT_POMP_OFF:
+    buffer[0] = 0x41;
+    buffer[1] = 0x09;
+    buffer[2] = 0x00;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_T_SETPOINT_CO:
+    buffer[0] = 0x41;
+    buffer[1] = 0x04;
+    buffer[2] = (uint8_t)value;
+    buffer[3] = (uint8_t)roundf((value - (uint8_t)value) * 100.0f);
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+
+  case SET_T_DELTA_CO:
+    buffer[0] = 0x41;
+    buffer[1] = 0x05;
+    buffer[2] = (uint8_t)value;
+    buffer[3] = (uint8_t)roundf((value - (uint8_t)value) * 100.0f);
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+  
+  case SET_EEV_MAXPULSES_OPEN:
+    buffer[0] = 0x41;
+    buffer[1] = 0x0D;
+    buffer[2] = (uint8_t)value;
+    buffer[3] = 0x00;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+  
+  case SET_WORKING_WATT:
+    buffer[0] = 0x41;
+    buffer[1] = 0x0E;
+    buffer[2] = roundf((uint8_t)value / 100);
+    buffer[3] = (uint8_t)value - roundf((uint8_t)value / 100)*100;
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
+  };
+  delay(500);
+
+  return so;
 }
