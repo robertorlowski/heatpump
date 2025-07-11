@@ -250,13 +250,13 @@ void loop()
 
       if (!jsonDocument["t_min"].isNull() 
         && !jsonDocument["t_max"].isNull() 
-        && !hp["last_power"].isNull() 
-        && !hp["last_heatpump_on"].isNull() )
+        && !hp["lt_pow"].isNull() 
+        && !hp["lt_hp_on"].isNull() )
       {
         double t_min = jsonAsString(jsonDocument["t_min"]).toDouble();
         double t_max = jsonAsString(jsonDocument["t_max"]).toDouble();
-        double last_power = jsonAsString(hp["last_power"]).toDouble();
-        double last_heatpump_on = jsonAsString(hp["last_heatpump_on"]).toDouble();
+        double last_power = jsonAsString(hp["lt_pow"]).toDouble();
+        double last_heatpump_on = jsonAsString(hp["lt_hp_on"]).toDouble();
 
         double wymiennik =  (double)(1.166) * 300 * (t_max - t_min);   
         jsonDocument["cop"] = round((wymiennik / last_power)*100) / 100;

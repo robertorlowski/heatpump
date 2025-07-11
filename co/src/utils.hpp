@@ -534,8 +534,8 @@ SERIAL_OPERATION sendRequest(SERIAL_OPERATION so, double value)
   case SET_WORKING_WATT:
     buffer[0] = 0x41;
     buffer[1] = 0x0E;
-    buffer[2] = roundf((uint8_t)value / 100);
-    buffer[3] = (uint8_t)value - roundf((uint8_t)value / 100)*100;
+    buffer[2] = (uint8_t)(value / 100);
+    buffer[3] = (uint8_t)value - (uint8_t)(value/100)*100;
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
     break;
