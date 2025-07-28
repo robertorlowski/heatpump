@@ -74,7 +74,8 @@ enum SERIAL_OPERATION {
   SET_T_SETPOINT_CO,
   SET_T_DELTA_CO,
   SET_EEV_MAXPULSES_OPEN,
-  SET_WORKING_WATT
+  SET_WORKING_WATT,
+  SET_EEV_SETPOINT,
 };
 
 enum WORK_MODE : int16_t {
@@ -91,9 +92,9 @@ ScheduleSlot coSlots[]{
 };
 
 ScheduleSlot cwuSlots[] {
-    {{14, 0}, {14, 30}},
+    {{13, 30}, {14, 30}},
     // {{22, 0}, {23, 0}},
-    {{5, 0}, {5, 30}}
+    {{4, 30}, {5, 30}}
 };
 
 ScheduleSlot updateManualMode {

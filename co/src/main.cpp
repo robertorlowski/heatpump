@@ -8,6 +8,7 @@
 #include <WebServer.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
+#include <WebSocketsClient.h>
 
 
 #define PV_count 5
@@ -33,6 +34,7 @@ JsonDocument emptyDoc;
 WebServer server(80);
 Preferences prefs;
 HTTPClient http;
+WebSocketsClient webSocket;
 
 // temporary variables
 unsigned long _millisSchedule = -1;
@@ -54,10 +56,10 @@ void collectDataFromSerial();
 void serverRoute(void);
 void forceRefresh(void);
 void putHpDataToCloud(void);
-void operationExecute(JsonDocument doc);
+String operationExecute(JsonDocument doc);
 void putHpDataToCloud(void);
 String putDataToCloud(String path, JsonDocument data);
-void operationExecute(JsonDocument ddd);
+void webSocketEvent(WStype_t type, uint8_t* payload, size_t length);
 
 // main
 void setup()
@@ -105,12 +107,16 @@ void setup()
      prefs.putShort("workMode", workMode);
   }
 
-  //Zapis danych ustawień do chmury:
-  putDataToCloud("/settings/set", settings());
+  webSocket.beginSSL("chpc-web.onrender.com", 443, "/ws");
+  webSocket.onEvent(webSocketEvent);
+  webSocket.setReconnectInterval(10000); // reconnect co 5s
 }
 
 void loop()
 {
+  webSocket.loop();
+  server.handleClient();
+
   if (digitalRead(SWITCH_POMP_CO))
   {
     delay(1000);
@@ -280,18 +286,30 @@ void loop()
     // get data from PV + HP
     if (_counter % 10 == 0)
     {
-        pv.total_power = 0;
-        pv.total_prod = 0;
-        pv.total_prod_today = 0;
-        pv.temperature = 0;
-        jsonDocument["PV"] = emptyDoc;
-        serialOpertion = sendRequest(SERIAL_OPERATION::GET_PV_DATA_1);
+      pv.total_power = 0;
+      pv.total_prod = 0;
+      pv.total_prod_today = 0;
+      pv.temperature = 0;
+      jsonDocument["PV"] = emptyDoc;
+      serialOpertion = sendRequest(SERIAL_OPERATION::GET_PV_DATA_1);
+
+      //Zapis danych ustawień do chmury:
+      putDataToCloud("/settings/set", settings());
     }
     else
     {
       jsonDocument["HP"] = emptyDoc;
       serialOpertion = sendRequest(SERIAL_OPERATION::GET_HP_DATA);
     }
+
+    if (_counter % 100 == 0) {
+        webSocket.disconnect();
+        delay(1000);
+        webSocket.beginSSL("chpc-web.onrender.com", 443, "/ws");
+        webSocket.onEvent(webSocketEvent);
+        webSocket.setReconnectInterval(10000);
+    }
+
     _counter++;
   }
 
@@ -300,8 +318,6 @@ void loop()
   {
     collectDataFromSerial();
   }
-
-  server.handleClient();
 }
 
 void collectDataFromSerial()
@@ -451,7 +467,8 @@ void serverRoute(void) {
         server.send(405, "text/plain", "Bad JSON");
         return;
       }
-      operationExecute(ddd);
+      String data = operationExecute(ddd);
+      server.send(200, "application/json", data);
     }
   );
 
@@ -496,9 +513,11 @@ void serverRoute(void) {
   }
 }
 
-void operationExecute(JsonDocument ddd) {
+String operationExecute(JsonDocument ddd) {
   
   JsonObject doc  = ddd.as<JsonObject>();
+  String data = "";
+  serializeJsonPretty(doc, data);
 
   //work_mode
   if (!doc["work_mode"].isNull()) {
@@ -516,28 +535,28 @@ void operationExecute(JsonDocument ddd) {
   //co_min
   if (!doc["co_min"].isNull() && jsonAsString(doc["co_min"]) != "" && jsonAsString(doc["co_min"]).toDouble() > 0) {
     if (jsonAsString(doc["co_min"]).toDouble() < 0) {
-      return;
+      return "";
     }
     prefs.putDouble("co_min", jsonAsString(doc["co_min"]).toDouble());      
   }
   //co_max
   if (!doc["co_max"].isNull() && jsonAsString(doc["co_max"]) != "" && jsonAsString(doc["co_max"]).toDouble() > 0) {
     if (jsonAsString(doc["co_max"]).toDouble() < 0  || jsonAsString(doc["co_max"]).toDouble() > 50) {
-      return;
+      return "";
     }
     prefs.putDouble("co_max", jsonAsString(doc["co_max"]).toDouble());
   }
   //cwu_min
   if (!doc["cwu_min"].isNull() && jsonAsString(doc["cwu_min"]) != "" && jsonAsString(doc["cwu_min"]).toDouble() > 0) {
     if (jsonAsString(doc["cwu_min"]).toDouble() < 0) {
-      return;
+      return "";
     }
     prefs.putDouble("cwu_min", jsonAsString(doc["cwu_min"]).toDouble());
   }
   //cwu_max
   if (!doc["cwu_max"].isNull() && jsonAsString(doc["cwu_max"]) != "" && jsonAsString(doc["cwu_max"]).toDouble() > 0) {
     if (jsonAsString(doc["cwu_max"]).toDouble() < 0  || jsonAsString(doc["cwu_max"]).toDouble() > 50) {
-      return;
+      return "";
     }
     prefs.putDouble("cwu_max", jsonAsString(doc["cwu_max"]).toDouble());
   }
@@ -585,11 +604,13 @@ void operationExecute(JsonDocument ddd) {
   {
     serialOpertion = sendRequest(SERIAL_OPERATION::SET_EEV_MAXPULSES_OPEN, jsonAsString(doc["eev_max_pulse_open"]).toDouble());  
   }
-
   
-  String data = "";
-  serializeJsonPretty(doc, data);
-  server.send(200, "application/json", data);
+  if (!doc["eev_setpoint"].isNull() && jsonAsString(doc["eev_setpoint"]) != "" ) 
+  {
+    serialOpertion = sendRequest(SERIAL_OPERATION::SET_EEV_SETPOINT, jsonAsString(doc["eev_setpoint"]).toDouble());  
+  }
+  
+  return data;
 }
 
 
@@ -606,6 +627,7 @@ void putHpDataToCloud(void) {
     delay(300);
     return;
   }  
+  
   printSerial(ddd["operation"]);
   operationExecute(ddd["operation"]);
 }
@@ -630,12 +652,31 @@ String putDataToCloud(String path, JsonDocument data) {
   http.end();
 
   if (httpCode < 0 ) {
-    char buffer[128];  // bufor na wynik formatowania
-    sprintf(buffer, "Błąd żądania: %s\n", http.errorToString(httpCode).c_str());
-    printSerial(buffer);
+    // char buffer[128];  // bufor na wynik formatowania
+    // sprintf(buffer, "Błąd żądania: %s\n", http.errorToString(httpCode).c_str());
+    // printSerial(buffer);
     return "";
   }   
   return http.getString();
+}
+
+void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
+  switch (type) {
+    case WStype_CONNECTED:
+      webSocket.sendTXT("ESP32 gotowe");
+      break;
+    case WStype_TEXT:
+        char oper[255];
+        sprintf(oper, "%s",payload);
+        if (strcmp("operation",oper) == 0 ) {
+          putHpDataToCloud();
+        }
+        break;
+    case WStype_DISCONNECTED:
+      break;
+    default:
+      break;
+  }
 }
 
 /*

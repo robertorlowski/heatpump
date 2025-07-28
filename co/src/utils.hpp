@@ -539,6 +539,15 @@ SERIAL_OPERATION sendRequest(SERIAL_OPERATION so, double value)
     buffer[4] = 0xFF;
     writeSerial(buffer, 5);
     break;
+
+  case SET_EEV_SETPOINT:
+    buffer[0] = 0x41;
+    buffer[1] = 0x08;
+    buffer[2] = (uint8_t)value;
+    buffer[3] = (uint8_t)roundf((value - (uint8_t)value) * 100.0f);
+    buffer[4] = 0xFF;
+    writeSerial(buffer, 5);
+    break;
   };
   delay(500);
 
