@@ -293,9 +293,7 @@ void loop()
       jsonDocument["PV"] = emptyDoc;
       serialOpertion = sendRequest(SERIAL_OPERATION::GET_PV_DATA_1);
 
-      //Zapis danych ustawień do chmury:
-      putDataToCloud("/settings/set", settings());
-    }
+    }    
     else
     {
       jsonDocument["HP"] = emptyDoc;
@@ -303,11 +301,14 @@ void loop()
     }
 
     if (_counter % 100 == 0) {
-        webSocket.disconnect();
-        delay(1000);
-        webSocket.beginSSL("chpc-web.onrender.com", 443, "/ws");
-        webSocket.onEvent(webSocketEvent);
-        webSocket.setReconnectInterval(10000);
+      //Zapis danych ustawień do chmury:
+      putDataToCloud("/settings/set", settings());
+
+      webSocket.disconnect();
+      delay(1000);
+      webSocket.beginSSL("chpc-web.onrender.com", 443, "/ws");
+      webSocket.onEvent(webSocketEvent);
+      webSocket.setReconnectInterval(10000);
     }
 
     _counter++;
@@ -663,7 +664,7 @@ String putDataToCloud(String path, JsonDocument data) {
 void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
     case WStype_CONNECTED:
-      webSocket.sendTXT("ESP32 gotowe");
+      webSocket.sendTXT("ESP32");
       break;
     case WStype_TEXT:
         char oper[255];

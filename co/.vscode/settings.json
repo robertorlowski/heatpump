@@ -1,4 +1,5 @@
 {
+    "editor.formatOnSave": true,
     "files.associations": {
         "string_view": "cpp",
         "array": "cpp",
