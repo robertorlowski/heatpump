@@ -87,8 +87,8 @@ enum WORK_MODE : int16_t {
 };
 
 ScheduleSlot coSlots[]{
-    {{23, 30}, {4, 0}},
-    // {{13, 0}, {15, 0}}
+    {{23, 00}, {4, 0}},
+    {{13, 0}, {14, 30}}
 };
 
 ScheduleSlot cwuSlots[] {
@@ -98,7 +98,7 @@ ScheduleSlot cwuSlots[] {
 };
 
 ScheduleSlot updateManualMode {
-  {22, 00}, {22, 30}
+  {23, 00}, {22, 30}
 };
 
 namespace ArduinoJson {
