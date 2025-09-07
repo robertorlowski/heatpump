@@ -240,9 +240,7 @@ void loop()
       {
         serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);    
       }  
-    }
-
-
+    
       if (!hp["HPS"].isNull()) {
         if (hp_prev != hp["HPS"] && !hp_prev ) {
           jsonDocument["t_min"] = hp["Ttarget"];
