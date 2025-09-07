@@ -152,6 +152,8 @@ void loop()
     schedule_co = schedule(rtcTime, coSlots, (sizeof(coSlots) / sizeof(ScheduleSlot)));
     schedule_cwu = schedule(rtcTime, cwuSlots, (sizeof(cwuSlots) / sizeof(ScheduleSlot)));
 
+    bool _co = co_pomp;
+
     switch (workMode)
     {
     case WORK_MODE::OFF:
@@ -177,7 +179,8 @@ void loop()
       //cwu_pomp = true;
       break;  
     }
-    
+
+ 
     digitalWriteA(tft, RELAY_HP_CWU, cwu_pomp);
     digitalWriteA(tft, RELAY_HP_CO, co_pomp);
 
@@ -188,13 +191,13 @@ void loop()
         if (workMode != WORK_MODE::OFF) {
           serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_CO_ON);
         }
-
       }
 
       if (hp["CO"] == 1) {
         if (workMode == WORK_MODE::OFF) {
           serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_CO_OFF);
           serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
+          serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
         
         } else if (workMode == WORK_MODE::CWU) {
             if (schedule_cwu) {
@@ -220,17 +223,25 @@ void loop()
       }
 
       //Włączamy pompę obiegową ciepłej wody, aby wymieszać wodę w zasobniku, gdy jest włączone CO
-      if (!hp["HCS"] 
-        && co_pomp 
-        && !hp["Ttarget"].isNull()
-        && !hp["Tho"].isNull()
-        && (jsonAsString(hp["Ttarget"]).toDouble() - jsonAsString(hp["Tho"]).toDouble() ) > 3 
-        && !hp["HCS"].isNull() && !hp["HCS"]
-      ) {
-        serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_ON);
-      } else if (!hp["HCS"].isNull() && hp["HCS"] && co_pomp) {
-        serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
-      }
+      if (co_pomp) 
+      {
+        if (!hp["HCS"] 
+          && !hp["Ttarget"].isNull()
+          && !hp["Tho"].isNull()
+          && (jsonAsString(hp["Ttarget"]).toDouble() - jsonAsString(hp["Tho"]).toDouble() ) > 3 
+          && !hp["HCS"].isNull() && !hp["HCS"]
+        ) {
+          serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_ON);
+        } else if (!hp["HCS"].isNull() && hp["HCS"] ) {
+          serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
+        }
+      } 
+      else if (_co) 
+      {
+        serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);    
+      }  
+    }
+
 
       if (!hp["HPS"].isNull()) {
         if (hp_prev != hp["HPS"] && !hp_prev ) {
@@ -281,6 +292,9 @@ void loop()
     if (workMode == WORK_MODE::MANUAL && checkSchedule(rtcTime, updateManualMode))
     {
       workMode = (WORK_MODE)prefs.getShort("workMode", WORK_MODE::OFF);
+      serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
+      serialOpertion = sendRequest(SERIAL_OPERATION ::SET_COLD_POMP_OFF);
+      
       PrintMode(tft, workMode);
       _millisSchedule = millis() - (MILLIS_SCHEDULE - 2000);
     }
