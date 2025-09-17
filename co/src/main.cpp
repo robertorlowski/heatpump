@@ -29,7 +29,6 @@ DateTime rtcTime;
 PV pv;
 SERIAL_OPERATION serialOpertion;
 WORK_MODE workMode = OFF;
-WORK_MODE prevMode = MANUAL;
 JsonDocument emptyDoc;
 WebServer server(80);
 Preferences prefs;
@@ -289,7 +288,8 @@ void loop()
 
     if (workMode == WORK_MODE::MANUAL && checkSchedule(rtcTime, updateManualMode))
     {
-      workMode = (WORK_MODE)prefs.getShort("workMode", WORK_MODE::OFF);
+      //workMode = (WORK_MODE)prefs.getShort("workMode", WORK_MODE::OFF);
+      workMode = WORK_MODE::AUTO;
       serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
       serialOpertion = sendRequest(SERIAL_OPERATION ::SET_COLD_POMP_OFF);
       
@@ -545,6 +545,8 @@ String operationExecute(JsonDocument ddd) {
           jsonAsString(doc["work_mode"]) == "CWU" ?
             workMode = WORK_MODE::CWU :
             workMode = WORK_MODE::OFF;  
+            
+    prefs.putShort("workMode", workMode);
   }
 
   //co_min

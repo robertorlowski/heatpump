@@ -98,7 +98,7 @@ ScheduleSlot cwuSlots[] {
 };
 
 ScheduleSlot updateManualMode {
-  {23, 00}, {22, 30}
+  {23, 00}, {23, 5}
 };
 
 namespace ArduinoJson {
