@@ -12,7 +12,7 @@ void initialize(RTC_DS3231 rtc, Adafruit_ST7735 tft);
 
 // print lcd
 void PrintD(Adafruit_ST7735 tft, String str, int line = 0);
-void PrintAll(Adafruit_ST7735 tft, bool co_on, DateTime rtcTime, JsonDocument hpDoc, PV pv_power);
+void PrintAll(Adafruit_ST7735 tft, bool co_on, double cwu_temp, DateTime rtcTime, JsonDocument hpDoc, PV pv_power, Preferences prefs);
 
 // serial
 void writeSerial(const uint8_t *buffer, uint8_t length);
@@ -21,6 +21,8 @@ int getDataFromSerial(char *_inData);
 SERIAL_OPERATION sendRequest(SERIAL_OPERATION so, double value = 0.0f);
 
 String jsonAsString(JsonVariant json);
+
+double GetT(DallasTemperature dallasSensors, uint8_t idx);
 
 void writeSerial(const uint8_t *buffer, uint8_t length)
 {
@@ -230,7 +232,7 @@ void digitalWriteA(Adafruit_ST7735 tft, uint8_t pin, uint8_t val) {
   
 }
 
-void PrintAll(Adafruit_ST7735 tft, bool co_on, bool cwu_on, DateTime rtcTime, JsonDocument hpDoc, WORK_MODE work, PV pv_power)
+void PrintAll(Adafruit_ST7735 tft, bool co_on, bool cwu_on, double cwu_temp, DateTime rtcTime, JsonDocument hpDoc, WORK_MODE work, PV pv_power, Preferences prefs)
 {  
   tft.fillScreen(ST77XX_BLACK);
   tft.setTextSize(1);
@@ -316,35 +318,39 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, bool cwu_on, DateTime rtcTime, Js
     //   tft.setTextColor(ST77XX_WHITE);
     // }
 
-    if (cwu_on ) {
-      displayRow(tft, 3, -1, "CWU:", "ON");
-    } else {
-      displayRow(tft, 3, -1, "CWU:", "OFF");
+    if (cwu_on)
+    {
+      tft.setTextColor(ST77XX_RED);
     }
+    char s_temp_cwu[10];
+    sprintf(s_temp_cwu, "%2.1f", cwu_temp);
+    displayRow(tft, 3, -1, "CWU:", s_temp_cwu);
+    tft.setTextColor(ST77XX_WHITE);
 
     tft.setTextColor(ST77XX_WHITE);
     tft.drawLine(0, 70, 420, 70, ST77XX_BLUE);
     tft.setTextSize(1);
 
     int xx = 6;
-    displayRow(tft, xx++, 0, "   T. CO:", jsonAsString(hp["Tmin"]) + "/" + jsonAsString(hp["Tmax"]));
-    // displayRow(tft, xx++, 0, "   T.CWU:", jsonAsString(hp["Tcwu_min"]) + "/" + jsonAsString(hp["Tcwu_max"]));
-    xx++;
+    displayRow(tft, xx++, 0, "   T.HP:", jsonAsString(hp["Tmin"]) + "/" + jsonAsString(hp["Tmax"]));
+    displayRow(tft, xx++, 0, "   T.CO:", String(prefs.getDouble("co_min"),0) + "/" + String(prefs.getDouble("co_max"),0));
+    displayRow(tft, xx++, 0, "  T.CWU:", String(prefs.getDouble("cwu_min"),0) + "/" + String(prefs.getDouble("cwu_max"),0));
+    //xx++;
     
     displayRow(tft, xx, 0, "T.be:", jsonAsString(hp["Tbe"]));
     displayRow(tft, xx++, 1, "T.ae:", jsonAsString(hp["Tae"]));
-
-    displayRow(tft, xx, 0, "T.co:", jsonAsString(hp["Tco"]));
-    displayRow(tft, xx++, 1, "T.ho:", jsonAsString(hp["Tho"]));
-
+  
     displayRow(tft, xx, 0, "T.hp:", jsonAsString(hp["Tsump"]));
-    displayRow(tft, xx++, 1, "Watt:", jsonAsString(hp["Watts"]));
+    displayRow(tft, xx++, 1, "T.ho:", jsonAsString(hp["Tho"]));
 
     displayRow(tft, xx, 0, "E.ev:", jsonAsString(hp["EEV"]));
     displayRow(tft, xx++, 1, "E.dt:", jsonAsString(hp["EEV_dt"]));
 
     displayRow(tft, xx, 0, "E.ps:", jsonAsString(hp["EEV_pos"]));
-    displayRow(tft, xx++, 1, "HP.s:", hp["HPS"].isNull() ? "" : hp["HPS"]  ? "ON" : "OFF");
+    displayRow(tft, xx++, 1, "Watt:", jsonAsString(hp["Watts"]));
+
+    // displayRow(tft, xx, 0, "T.co:", jsonAsString(hp["Tco"]));
+    // displayRow(tft, xx++, 1, "HP.s:", hp["HPS"].isNull() ? "" : hp["HPS"]  ? "ON" : "OFF");
  
     displayRow(tft, xx, 0, "HC.s:",  hp["HCS"].isNull() ? "" : hp["HCS"] ? "ON" : "OFF");
     displayRow(tft, xx++, 1, "CC.s:", hp["CCS"].isNull() ? "" : hp["CCS"] ? "ON" : "OFF");
@@ -552,4 +558,22 @@ SERIAL_OPERATION sendRequest(SERIAL_OPERATION so, double value)
   delay(500);
 
   return so;
+}
+
+
+double GetT(DallasTemperature dallasSensors, uint8_t idx) {
+  double tempdouble = -127.0;
+  for (int i = 0; i<5; i++) {
+    tempdouble = dallasSensors.getTempCByIndex(idx);
+    if ((tempdouble == 85.0) || (tempdouble == -127.0)) {
+      if (tempdouble == 85.0) {  //initial value in dallas register after poweron
+        delay(375);              //375 actual for 11 bits resolution, 2-3 retries OK for 12-bits resolution
+      } else {
+        delay(375);
+      }
+    } else {
+      break;
+    }
+  }
+  return tempdouble;
 }

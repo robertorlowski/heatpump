@@ -3,12 +3,12 @@
 #include <Adafruit_GFX.h>    // Core graphics library
 #include <Adafruit_ST7735.h> // Hardware-specific library for ST7735
 #include <ArduinoJson.h>
-
-
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#include <Preferences.h>
 
 const char devID = 0x10;
 #define PV_DEVICE_ID 0x69
-
 
 #define BD
 
@@ -24,7 +24,11 @@ const char devID = 0x10;
 #define RELAY_HP_CWU 25
 #define RELAY_HP_CO 26
 #define PWR 18
-#define SWITCH_POMP_CO 5
+#define SWITCH_WORK_MODE 5
+
+#define ONE_WIRE_BUS 4
+
+
 
 #ifdef BD
 #define SSID "Jagodzianka"
@@ -92,8 +96,7 @@ ScheduleSlot coSlots[]{
 };
 
 ScheduleSlot cwuSlots[] {
-    {{13, 30}, {14, 45}},
-    // {{22, 0}, {23, 0}},
+    {{13, 00}, {14, 30}},
     {{4, 30}, {5, 30}}
 };
 
