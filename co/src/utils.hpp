@@ -170,6 +170,14 @@ String jsonAsString(JsonVariant json)
     return json.as<const char *>();
 }
 
+int jsonAsInt(JsonVariant json)
+{
+  if (json.isNull())
+    return 0;
+  else 
+    return json.as<int>();
+}
+
 void displayRow(Adafruit_ST7735 tft, int row, int col, String name, String value, String defaultVlue = "")
 {
   if (col == -1)
@@ -278,7 +286,6 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, bool cwu_on, double cwu_temp, Dat
     // tft.setCursor(105, 53);
     // tft.printf("%s", hp["CWU"] ? "ON" : "OFF");
     
-
     tft.setTextSize(2);
 
     if (hp["F"])
@@ -322,10 +329,13 @@ void PrintAll(Adafruit_ST7735 tft, bool co_on, bool cwu_on, double cwu_temp, Dat
     {
       tft.setTextColor(ST77XX_RED);
     }
-    char s_temp_cwu[10];
-    sprintf(s_temp_cwu, "%2.1f", cwu_temp);
-    displayRow(tft, 3, -1, "CWU:", s_temp_cwu);
-    tft.setTextColor(ST77XX_WHITE);
+    
+    if (cwu_temp > 0) {
+      char s_temp_cwu[10];
+      sprintf(s_temp_cwu, "%2.1f", cwu_temp);
+      displayRow(tft, 3, -1, "CWU:", s_temp_cwu);
+      tft.setTextColor(ST77XX_WHITE);
+    }
 
     tft.setTextColor(ST77XX_WHITE);
     tft.drawLine(0, 70, 420, 70, ST77XX_BLUE);
