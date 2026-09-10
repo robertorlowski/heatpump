@@ -294,7 +294,7 @@ void loop()
       {
         serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("co_max")); 
         serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("co_max")-prefs.getDouble("co_min")); 
-        serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_ON);
+        // serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_ON);
       }
     }
     //WPW ustawienie pod CWU
@@ -302,7 +302,7 @@ void loop()
     {
       serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("cwu_max")); 
       serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("cwu_max")-prefs.getDouble("cwu_min")); 
-      serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
+      // serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
     }
 
     switchManualMode();
@@ -799,4 +799,5 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
 
 /*
 {"Tbe":"23.6","Tae":"23.3","Tco":"23.7","Tho":"23.4","Ttarget":"24.8","Tsump":"23.9","EEV_dt":"0.0","Tcwu":"25.0","Tmax":"18.5","Tmin":"13.0","Tcwu_max":"26.0","Tcwu_min":"23.0","Watts":"72","EEV":"2.0","EEV_pos":"50","HCS":0,"CCS":0,"HPS":0,"F":0,"CWUS":0,"CWU":1,"CO":1}
+"Tbe":"10.9","Tae":"13.6","Tco":"0.0","Tho":"50.2","Ttarget":"41.4","Tsump":"52.6","EEV_dt":"2.6","Tmax":"45.0","Tmin":"35.0","Watts":"3199","EEV":"0.5","EEV_pos":"60","EEV_pulse":"1","SHS":0,"HCS":1,"CCS":1,"HPS":1,"F":1,"CO":1,"WWatt":"3800.00","EEVmax":"60","lt_pow":"625","lt_hp_on":"807"}
 */
