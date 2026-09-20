@@ -1,26 +1,20 @@
 #include <Arduino.h>
 #include <utils.hpp>
-#include <HardwareSerial.h>
-#include <env.h>
-#include <ArduinoJson.h>
-#include <WiFi.h>
-#include "web/static_files.h"
-#include <WebServer.h>
-#include <HTTPClient.h>
-#include <WebSocketsClient.h>
+#include <cloud_client.hpp>
+#include <cop_estimator.hpp>
+#include <operation_controller.hpp>
+#include <operation_parser.hpp>
+#include <serial_bus.hpp>
 
-#define PV_count 5
-#define HP_FORCE_ON 2000
-// #define T_CO_ON 30.0
-
-// const's
-const int MILLIS_SCHEDULE_ON = 10000;
-const int MILLIS_SCHEDULE_OFF = 30000; 
-int MILLIS_REFRESH = MILLIS_SCHEDULE_OFF;
+constexpr uint8_t PV_DEVICE_COUNT = 5;
+constexpr int64_t HP_FORCE_ON = 2000;
+constexpr unsigned long MILLIS_REFRESH_ACTIVE = 10000;
+constexpr unsigned long MILLIS_REFRESH_IDLE = 30000;
+unsigned long refreshInterval = MILLIS_REFRESH_IDLE;
+constexpr unsigned long TIME_SYNC_INTERVAL = 6UL * 60UL * 60UL * 1000UL;
+constexpr unsigned long TIME_SYNC_RETRY_INTERVAL = 5UL * 60UL * 1000UL;
 
 
-
-const size_t JSON_BUFFER_SIZE = 1024;
 
 // global variables
 RTC_DS3231 rtc;
@@ -28,482 +22,259 @@ Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_CLK, TFT_RST
 JsonDocument jsonDocument;
 DateTime rtcTime;
 PV pv;
-SERIAL_OPERATION serialOpertion;
-WORK_MODE workMode = OFF;
-JsonDocument emptyDoc;
-WebServer server(80);
-Preferences prefs;
-HTTPClient http;
-WebSocketsClient webSocket;
+SerialBus serialBus(Serial);
+OperationController operationController(serialBus, HP_FORCE_ON);
+CloudClient cloudClient;
+CopEstimator copEstimator;
 
 // temporary variables
-unsigned long _millisSchedule = -1;
-
-bool schedule_co = false;
-bool schedule_cwu = false;
-uint8_t _counter = 0;
-bool co_pomp = false;
-bool cwu_pomp = false;
-bool hp_prev = false;
-
-// Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
-OneWire oneWire(ONE_WIRE_BUS);
-DallasTemperature dallasSensors(&oneWire);
-
-// double cwu_temp;
+unsigned long millisRefreshAt = -1;
+unsigned long millisTimeSyncAt = 0;
+unsigned long timeSyncInterval = TIME_SYNC_RETRY_INTERVAL;
+uint32_t readCounter = 0;
+uint32_t pvCrcErrors = 0;
+uint32_t operationValidationErrors = 0;
+uint32_t cloudResponseParseErrors = 0;
+uint32_t hpJsonErrors = 0;
+uint32_t pvFrameErrors = 0;
+bool cloudPostPending = false;
 
 // global functions
-bool schedule(DateTime time, ScheduleSlot *slots, int arraySize);
-JsonDocument settings(void);
 void sendDataToSerial(char operation);
-long _getPVData(uint8_t pv_nr, char *inData, uint8_t b_start, uint8_t b_count);
-void collectDataFromPV(char inData[1024]);
+uint32_t getPvData(uint8_t pvNumber, const uint8_t *data,
+  uint8_t startByte, uint8_t byteCount);
+bool collectDataFromPV(const uint8_t *inData, size_t length);
 void collectDataFromSerial();
-void serverRoute(void);
-void forceRefresh(void);
 void putHpDataToCloud(void);
-String operationExecute(JsonDocument doc);
-void putHpDataToCloud(void);
-String putDataToCloud(String path, JsonDocument data);
-void webSocketEvent(WStype_t type, uint8_t* payload, size_t length);
-void switchWorkMode(void);
+void operationExecute(JsonDocument doc);
 void getDataFromHpPv(void);
 void calculateCOP(JsonObject hp);
-void switchManualMode(void);
+void applyControllerOutputs(void);
 
 // main
 void setup()
 {
-  Serial.setRxBufferSize(SERIAL_BUFFER);
-  Serial.begin(9600); // Initialize serial communication with a baud rate of 9600
+  serialBus.begin(9600, SERIAL_BUFFER);
 
   Wire.begin();
   rtc.begin();
-
-  dallasSensors.begin();
-
 
   pinMode(RELAY_HP_CWU, OUTPUT);
   pinMode(RELAY_HP_CO, OUTPUT);
   pinMode(PWR, OUTPUT);
 
   digitalWrite(PWR, HIGH);
-  pinMode(SWITCH_WORK_MODE, INPUT);
+  bool timeSynchronized = initialize(rtc, tft);
+  millisTimeSyncAt = millis();
+  timeSyncInterval = timeSynchronized
+    ? TIME_SYNC_INTERVAL : TIME_SYNC_RETRY_INTERVAL;
 
-  initialize(rtc, tft);
+  jsonDocument["HP"].to<JsonObject>();
+  jsonDocument["PV"].to<JsonObject>();
 
-  deserializeJson(emptyDoc, "{}");
-  jsonDocument["HP"] = emptyDoc;
-  jsonDocument["PV"] = emptyDoc;
-
-  serverRoute();
-  server.begin();
-  
-  prefs.begin("hp", false);
- 
-    if (!prefs.isKey("cwu_min")) {
-    prefs.putDouble("cwu_min", 40);
-  }
-  if (!prefs.isKey("cwu_max")) {
-    prefs.putDouble("cwu_max", 47);
-  }
-  if (!prefs.isKey("co_min")) {
-    prefs.putDouble("co_min", 35);
-  }
-  if (!prefs.isKey("co_max")) {
-    prefs.putDouble("co_max", 45);
-  }
-
-  if (prefs.isKey("workMode")) {
-      workMode = (WORK_MODE)prefs.getShort("workMode", WORK_MODE::OFF);
-  } else {
-     prefs.putShort("workMode", workMode);
-  }
-
-  webSocket.beginSSL("chpc-web.onrender.com", 443, "/ws");
-  webSocket.onEvent(webSocketEvent);
-  webSocket.setReconnectInterval(10000); // reconnect co 5s
-
-  dallasSensors.requestTemperatures(); // Send the command to get temperatures
+  cloudClient.begin();
 }
 
 void loop()
 {
+  serialBus.tick();
+  operationController.tick();
   collectDataFromSerial();
+  serialBus.tick();
+  cloudClient.tick();
 
-  webSocket.loop();
-  server.handleClient();
+  if (cloudClient.takeOperationRequest()) cloudPostPending = true;
 
-  switchWorkMode();
+  if (millis() - millisTimeSyncAt >= timeSyncInterval && serialBus.isIdle()) {
+    millisTimeSyncAt = millis();
+    timeSyncInterval = synchronizeRtc(rtc)
+      ? TIME_SYNC_INTERVAL : TIME_SYNC_RETRY_INTERVAL;
+  }
 
-  if ((_millisSchedule == -1) || (millis() - _millisSchedule > MILLIS_REFRESH))
+  if (cloudPostPending && serialBus.isIdle()) {
+    cloudPostPending = false;
+    putHpDataToCloud();
+  }
+
+  if (millisRefreshAt == static_cast<unsigned long>(-1)
+    || millis() - millisRefreshAt > refreshInterval)
   {
-    _millisSchedule = millis();
+    millisRefreshAt = millis();
   
     rtcTime = rtc.now(); // Get current time from RTC
-    // check co
-    schedule_co = schedule(rtcTime, coSlots, (sizeof(coSlots) / sizeof(ScheduleSlot)));
-    schedule_cwu = schedule(rtcTime, cwuSlots, (sizeof(cwuSlots) / sizeof(ScheduleSlot)));
+    const HpPreferences &prefs = operationController.preferences();
+    bool co_pomp = operationController.coRelay();
+    bool cwu_pomp = operationController.cwuRelay();
     
-    // cwu_temp = GetT(dallasSensors, 0);
-    // dallasSensors.requestTemperatures(); // Send the command to get temperatures
-
-    // bool _co =  co_pomp;
-    // cwu_pomp =  (cwu_temp < prefs.getDouble("cwu_min")) ||  
-    //             (cwu_pomp &&  (cwu_temp < prefs.getDouble("cwu_max"))) ||
-    //             (schedule_cwu &&  (cwu_temp < prefs.getDouble("cwu_max")-5));
-
-    // switch (workMode)
-    // {
-    //   case WORK_MODE::OFF:
-    //     co_pomp = false;
-    //     cwu_pomp = false;
-    //     break;
-    //   case WORK_MODE::MANUAL:
-    //     co_pomp = !cwu_pomp;
-    //     break;
-    //   case WORK_MODE::AUTO:
-    //     co_pomp = schedule_co && !cwu_pomp;
-    //     break;
-    //   case WORK_MODE::AUTO_PV:
-    //     co_pomp = (schedule_co || pv.pv_power) && !cwu_pomp;
-    //     break;
-    //   case WORK_MODE::CWU:
-    //     break;  
-    // }
-    
-    bool _co = co_pomp;
-
-    switch (workMode)
-    {
-    case WORK_MODE::OFF:
-      co_pomp = false;
-      cwu_pomp = false;
-      break;
-    case WORK_MODE::MANUAL:
-      co_pomp = true;
-      cwu_pomp = true;
-      break;
-    case WORK_MODE::AUTO:
-      co_pomp = schedule_co;
-      cwu_pomp = co_pomp;
-      break;
-    case WORK_MODE::AUTO_PV:
-      co_pomp = schedule_co || pv.pv_power;
-      cwu_pomp = co_pomp;
-      // cwu_pomp = true;
-      break;
-    case WORK_MODE::CWU:
-      co_pomp = false;
-      cwu_pomp = false;
-      //cwu_pomp = true;
-      break;  
-    }
-
     jsonDocument["time"] = rtcTime;
     jsonDocument["co_pomp"] = co_pomp;
     jsonDocument["cwu_pomp"] = cwu_pomp; 
-    // jsonDocument["cwu_temp"] = cwu_temp; 
     jsonDocument["pv_power"] = pv.pv_power;
-    jsonDocument["schedule_co"] = schedule_co;
-    jsonDocument["work_mode"] = workMode;
-    jsonDocument["co_min"] = prefs.getDouble("co_min");
-    jsonDocument["co_max"] = prefs.getDouble("co_max");
-    jsonDocument["cwu_min"] = prefs.getDouble("cwu_min");
-    jsonDocument["cwu_max"] = prefs.getDouble("cwu_max");  
+    jsonDocument["work_mode"] = prefs.workMode;
+    jsonDocument["co_min"] = prefs.coMin;
+    jsonDocument["co_max"] = prefs.coMax;
+    jsonDocument["cwu_min"] = prefs.cwuMin;
+    jsonDocument["cwu_max"] = prefs.cwuMax;
+    jsonDocument["serial_queue_overflow"] = serialBus.queueOverflowCount();
+    jsonDocument["serial_read_timeout"] = serialBus.readTimeoutCount();
+    jsonDocument["serial_receive_overflow"] = serialBus.receiveOverflowCount();
+    jsonDocument["pv_crc_error"] = pvCrcErrors;
+    jsonDocument["cloud_http_status"] = cloudClient.lastHttpStatus();
+    jsonDocument["cloud_request_error"] = cloudClient.requestErrorCount();
+    jsonDocument["websocket_disconnect"] = cloudClient.webSocketDisconnectCount();
+    jsonDocument["operation_validation_error"] = operationValidationErrors;
+    jsonDocument["cloud_response_parse_error"] = cloudResponseParseErrors;
+    jsonDocument["hp_json_error"] = hpJsonErrors;
+    jsonDocument["pv_frame_error"] = pvFrameErrors;
+    jsonDocument["preference_validation_error"] =
+      operationController.preferenceValidationErrorCount();
 
     JsonObject hp = jsonDocument["HP"].as<JsonObject>();
-    calculateCOP(hp);
 
-    // if ( !hp.isNull() ) {
+    refreshInterval = jsonAsInt(hp["HPS"]) > 0
+      ? MILLIS_REFRESH_ACTIVE : MILLIS_REFRESH_IDLE;
 
-    //   if (hp["CO"] == 1) {
-    //     if (workMode == WORK_MODE::OFF) {
-    //       serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_CO_OFF);
-    //       serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
-    //     }   
-    //   } 
-    //   else if (workMode == WORK_MODE::CWU) 
-    //   {
-    //     if ( cwu_pomp ) {
-    //       serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_CO_ON);
-    //     } else {
-    //       serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_CO_OFF);
-    //     }
-    //   }  
-    //   else 
-    //   {
-    //     serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_CO_ON);
-    //   } 
-      
-    //   if ( cwu_pomp || co_pomp) 
-    //   {
-    //     if (jsonAsString(hp["Tmin"]).toDouble() != 50 || jsonAsString(hp["Tmax"]).toDouble() != 50)
-    //     {
-    //       serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, 50); 
-    //       serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, 0); 
-    //     }
-    //   }
-    //   else if (jsonAsString(hp["Tmin"]).toDouble() != prefs.getDouble("co_min") || jsonAsString(hp["Tmax"]).toDouble() != prefs.getDouble("co_max")) 
-    //   {
-    //     serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("co_max")); 
-    //     serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("co_max")-prefs.getDouble("co_min")); 
-    //   } 
-    // }
-
-    MILLIS_REFRESH = jsonAsInt(hp["HPS"]) > 0 ? MILLIS_SCHEDULE_ON : MILLIS_SCHEDULE_OFF;
-  
-    if (hp["CO"] == 1) {
-      if (workMode == WORK_MODE::OFF) {
-        serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_CO_OFF);
-        serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
-        serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
-      
-      // } else if (workMode == WORK_MODE::CWU) {
-      //     if (schedule_cwu) {
-      //       serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_ON);
-      //     } else {
-      //       serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
-      //     } 
-
-      } else {
-          if (schedule_cwu  /*|| schedule_co */ ) {
-            serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_ON);
-          } else {
-            serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
-          } 
-      }
-    } else {
-      if (workMode != WORK_MODE::OFF) {
-        serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_CO_ON);
-      }
-    }
-
-    //ustawienie pod CO
-    // if ( _co != co_pomp ) {
-    //   if (co_pomp) {
-    //     serialOpertion = sendRequest(SERIAL_OPERATION::SET_HOT_POMP_ON);
-    //   } else {
-    //     serialOpertion = sendRequest(SERIAL_OPERATION::SET_HOT_POMP_OFF);
-    //   }
-    // }
-
-    if ( co_pomp  && workMode != WORK_MODE::CWU ) 
-    {
-      if (jsonAsString(hp["Tmin"]).toDouble() != prefs.getDouble("co_min") || jsonAsString(hp["Tmax"]).toDouble() != prefs.getDouble("co_max"))
-      {
-        serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("co_max")); 
-        serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("co_max")-prefs.getDouble("co_min")); 
-        // serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_ON);
-      }
-    }
-    //WPW ustawienie pod CWU
-    else if (jsonAsString(hp["Tmin"]).toDouble() != prefs.getDouble("cwu_min") || jsonAsString(hp["Tmax"]).toDouble() != prefs.getDouble("cwu_max")) 
-    {
-      serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_SETPOINT_CO, prefs.getDouble("cwu_max")); 
-      serialOpertion = sendRequest(SERIAL_OPERATION ::SET_T_DELTA_CO, prefs.getDouble("cwu_max")-prefs.getDouble("cwu_min")); 
-      // serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
-    }
-
-    switchManualMode();
-
-    digitalWriteA(tft, RELAY_HP_CWU, cwu_pomp);
-    digitalWriteA(tft, RELAY_HP_CO, co_pomp);
-    
     // print ALL
-    PrintAll(tft, co_pomp, cwu_pomp, -1 /*cwu_temp*/, rtcTime, jsonDocument, workMode, pv, prefs);
+    PrintAll(tft, co_pomp, cwu_pomp, -1, rtcTime, jsonDocument, prefs.workMode, pv, prefs);
 
-    putHpDataToCloud();
+    cloudPostPending = true;
     getDataFromHpPv();
-  }
-}
-
-void switchManualMode(void)
-{
-  if (workMode == WORK_MODE::MANUAL && checkSchedule(rtcTime, updateManualMode))
-  {
-    //workMode = (WORK_MODE)prefs.getShort("workMode", WORK_MODE::OFF);
-    workMode = WORK_MODE::AUTO;
-    serialOpertion = sendRequest(SERIAL_OPERATION ::SET_HOT_POMP_OFF);
-    serialOpertion = sendRequest(SERIAL_OPERATION ::SET_COLD_POMP_OFF);
-    
-    PrintMode(tft, workMode);
-    _millisSchedule = millis() - (MILLIS_SCHEDULE_OFF - 2000);
   }
 }
 
 void calculateCOP(JsonObject hp) 
 {
-  if ( hp.isNull() ) {
+  if (hp.isNull() || hp["HPS"].isNull() || hp["Tho"].isNull()
+    || hp["Ttarget"].isNull()) return;
+
+  const bool running = jsonAsInt(hp["HPS"]) > 0;
+  const double topTemperature = jsonAsString(hp["Tho"]).toDouble();
+  const double middleTemperature = jsonAsString(hp["Ttarget"]).toDouble();
+  const double electricalEnergyWh = hp["lt_pow"].isNull()
+    ? 0.0 : jsonAsString(hp["lt_pow"]).toDouble();
+  const uint32_t cycleDurationSeconds = hp["lt_hp_on"].isNull()
+    ? 0 : static_cast<uint32_t>(jsonAsString(hp["lt_hp_on"]).toDouble());
+
+  CopCycleEvent event = copEstimator.update(running, topTemperature,
+    middleTemperature, electricalEnergyWh, cycleDurationSeconds);
+
+  if (event == CopCycleEvent::STARTED) {
+    jsonDocument["t_min"] = middleTemperature;
+    jsonDocument["t_max"] = middleTemperature;
+    jsonDocument["cop"].clear();
+    jsonDocument["cop_min"].clear();
+    jsonDocument["cop_max"].clear();
+    jsonDocument["cop_bottom_start"].clear();
     return;
-  } 
-
-  if (!hp["HPS"].isNull()) {
-    if (hp_prev != hp["HPS"] && !hp_prev ) {
-      jsonDocument["t_min"] = hp["Ttarget"];
-      jsonDocument["t_max"] = hp["Ttarget"];
-      jsonDocument["cop"].clear();
-    } 
-    hp_prev = hp["HPS"]; 
   }
 
-  JsonObject temp_ = jsonDocument.as<JsonObject>();
-  if (!hp["Ttarget"].isNull()) {
-    if (jsonDocument["t_min"].isNull()) {
-      jsonDocument["t_min"] = hp["Ttarget"]; 
-    } else if (jsonAsString(hp["Ttarget"]).toDouble() < jsonAsString(temp_["t_min"]).toDouble()) {
-      jsonDocument["t_min"] = hp["Ttarget"]; 
-    } 
-      
-    if (jsonDocument["t_max"].isNull()) {
-      jsonDocument["t_max"] = hp["Ttarget"]; 
-    } else if (jsonAsString(hp["Ttarget"]).toDouble() > jsonAsString(temp_["t_max"]).toDouble()) {
-      jsonDocument["t_max"] = hp["Ttarget"]; 
-    } 
+  if (copEstimator.cycleActive()) {
+    jsonDocument["t_max"] = copEstimator.currentMiddleTemperature();
+    return;
   }
 
-  if (!jsonDocument["t_min"].isNull() 
-    && !jsonDocument["t_max"].isNull() 
-    && !hp["lt_pow"].isNull() 
-    && !hp["lt_hp_on"].isNull() )
-  {
-    double t_min = jsonAsString(jsonDocument["t_min"]).toDouble();
-    double t_max = jsonAsString(jsonDocument["t_max"]).toDouble();
-    double last_power = jsonAsString(hp["lt_pow"]).toDouble();
-    double last_heatpump_on = jsonAsString(hp["lt_hp_on"]).toDouble();
+  if (event != CopCycleEvent::COMPLETED) return;
 
-    double wymiennik =  (double)(1.166) * 300 * (t_max - t_min);   
-    jsonDocument["cop"] = round((wymiennik / last_power)*100) / 100;
-  }
-}
+  const CopEstimate &estimate = copEstimator.estimate();
+  jsonDocument["t_min"] = estimate.startMiddleTemperature;
+  jsonDocument["t_max"] = estimate.endMiddleTemperature;
+  jsonDocument["cop_bottom_start"] = estimate.startBottomTemperature;
 
-void switchWorkMode(void)
- {
-  if (digitalRead(SWITCH_WORK_MODE))
-  {
-    delay(1000);
-    if (digitalRead(SWITCH_WORK_MODE)) {
-      workMode = nextWorkMode(workMode);
-      prefs.putShort("workMode", workMode);
-    }
-  
-    PrintMode(tft, workMode);
-    _millisSchedule = millis() - (MILLIS_SCHEDULE_OFF- 2000);
+  if (!estimate.valid) {
+    jsonDocument["cop"].clear();
+    jsonDocument["cop_min"].clear();
+    jsonDocument["cop_max"].clear();
+    return;
   }
+
+  jsonDocument["cop_min"] = round(estimate.minimum * 100.0) / 100.0;
+  jsonDocument["cop_max"] = round(estimate.maximum * 100.0) / 100.0;
+  jsonDocument["cop"] = round(estimate.estimated * 100.0) / 100.0;
 }
 
 void getDataFromHpPv(void) 
 {
-    // get data from PV + HP
-    if (_counter % 10 == 0)
-    {
+  bool queued;
+  if (readCounter % 10 == 0) {
+    queued = serialBus.enqueue(SERIAL_OPERATION::GET_PV_DATA_1);
+    if (queued) {
       pv.total_power = 0;
       pv.total_prod = 0;
       pv.total_prod_today = 0;
       pv.temperature = 0;
-      jsonDocument["PV"] = emptyDoc;
-      serialOpertion = sendRequest(SERIAL_OPERATION::GET_PV_DATA_1);
-
-    }    
-    else
-    {
-      jsonDocument["HP"] = emptyDoc;
-      serialOpertion = sendRequest(SERIAL_OPERATION::GET_HP_DATA);
     }
+  } else {
+    queued = serialBus.enqueue(SERIAL_OPERATION::GET_HP_DATA);
+  }
 
-    if (_counter % 100 == 0) {
-      //Zapis danych ustawień do chmury:
-      putDataToCloud("/settings/set", settings());
-
-      webSocket.disconnect();
-      delay(1000);
-      webSocket.beginSSL("chpc-web.onrender.com", 443, "/ws");
-      webSocket.onEvent(webSocketEvent);
-      webSocket.setReconnectInterval(10000);
-    }
-
-    _counter++;
+  if (queued) readCounter++;
 }
 
 void collectDataFromSerial()
 {
-  if (!Serial.available()) {
+  uint8_t inData[SERIAL_BUFFER];
+  size_t length = serialBus.readFrame(inData, sizeof(inData));
+  if (length == 0) return;
+
+  if (length >= 4 && inData[0] == static_cast<uint8_t>(devID) && inData[3] == 0xFF) {
+    sendDataToSerial(static_cast<char>(inData[1]));
     return;
   }
-  
-  char inData[SERIAL_BUFFER];
-  int len = getDataFromSerial(inData);
 
-  if ((inData[0] == devID) && (inData[3] == 0xFF))
-  {
-    sendDataToSerial(inData[1]);
-  }
-  else if (inData[0] == PV_DEVICE_ID &&
-           (serialOpertion == SERIAL_OPERATION::GET_PV_DATA_1 ||
-            serialOpertion == SERIAL_OPERATION::GET_PV_DATA_2))
-  {
-    if (inData[1] == 0x03)
-    {
-      if (serialOpertion == SERIAL_OPERATION::GET_PV_DATA_1) {
-        collectDataFromPV(inData);
-        serialOpertion = sendRequest(SERIAL_OPERATION::GET_PV_DATA_2);
-      } 
-      else if (serialOpertion == SERIAL_OPERATION::GET_PV_DATA_2)
-      {        
-        collectDataFromPV(inData);
-        if (pv.pv_power && (pv.total_power >= HP_FORCE_ON))
-        {
-         serialOpertion =  sendRequest( (pv.pv_power  && (workMode == AUTO_PV) ) ? 
-            SERIAL_OPERATION::SET_HP_FORCE_ON : 
-            SERIAL_OPERATION::SET_HP_FORCE_OFF);
-        } 
-        else 
-        {
-         serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
-        }
-        pv.pv_power = pv.total_power >= HP_FORCE_ON;
-        jsonDocument["pv_power"] = pv.pv_power;
-        jsonDocument["PV"] = pv;
-      }
+  PendingRead pendingRead = serialBus.pendingRead();
+  if ((pendingRead == PendingRead::PV_PART_1 || pendingRead == PendingRead::PV_PART_2)
+    && length >= 2 && inData[0] == PV_DEVICE_ID && inData[1] == 0x03) {
+    if (!serialBus.validateModbusFrame(inData, length)) {
+      pvCrcErrors++;
+      serialBus.completeRead();
+      return;
     }
+    bool valid = collectDataFromPV(inData, length);
+    serialBus.completeRead();
+
+    if (!valid) {
+      pvFrameErrors++;
+      return;
+    }
+    if (pendingRead == PendingRead::PV_PART_1) {
+      serialBus.enqueueFollowUp(SERIAL_OPERATION::GET_PV_DATA_2);
+    } else {
+      pv.pv_power = pv.total_power >= HP_FORCE_ON;
+      jsonDocument["pv_power"] = pv.pv_power;
+      jsonDocument["PV"] = pv;
+      operationController.updatePv(pv);
+      applyControllerOutputs();
+    }
+    return;
   }
-  else if (serialOpertion == SERIAL_OPERATION::GET_HP_DATA)
-  {
+
+  if (pendingRead == PendingRead::HP) {
     JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, inData);
+    DeserializationError error = deserializeJson(
+      doc, reinterpret_cast<const char *>(inData), length);
+    serialBus.completeRead();
     if (!error) {
       jsonDocument["HP"] = doc;
+      calculateCOP(jsonDocument["HP"].as<JsonObject>());
+    } else {
+      hpJsonErrors++;
     }
   }
 }
 
-void collectDataFromPV(char inData[1024])
+bool collectDataFromPV(const uint8_t *inData, size_t length)
 {
-  for (int i = 0; i < PV_count; i++)
-  {
-    // printSerial("NR " + String(i) + " total_power " + String(_getPVData(i, inData, 19, 2)/10));
-    pv.total_power += _getPVData(i, inData, 19, 2)/10;
-    // printSerial("NR " + String(i) + " total_prod_today " +  String(_getPVData(i, inData, 21, 2)));
-    pv.total_prod_today += _getPVData(i, inData, 21, 2);
-    // printSerial("NR " + String(i) + " total_prod " +  String(_getPVData(i, inData, 23, 4)));
-    pv.total_prod += _getPVData(i, inData, 23, 4);
-    // printSerial("NR " + String(i) + " temperature 0 " +  String(_getPVData(i, inData, 27, 2) ));
-    // printSerial("NR " + String(i) + " temperature 1 " +  String(_getPVData(i, inData, 27, 1) ));
-    // printSerial("NR " + String(i) + " temperature 2 " +  String(_getPVData(i, inData, 28, 1) ));
-    pv.temperature = _getPVData(i, inData, 27, 2) / 10;   
-    // printSerial("NR " + String(i) + " temperature " +  String(((_getPVData(i, inData, 28, 1) + _getPVData(i, inData, 27, 1)) / 10)));
-    // pv.temperature = ((_getPVData(i, inData, 28, 1) + _getPVData(i, inData, 27, 1)) / 10);
-  }
-}
+  constexpr size_t requiredLength = 31 + (PV_DEVICE_COUNT - 1) * 40;
+  if (length < requiredLength) return false;
 
-bool schedule(DateTime time, ScheduleSlot *slots, int arraySize)
-{
-  bool _ret = false;
-  for (int i = 0; (i < arraySize && !_ret); i++)
+  for (int i = 0; i < PV_DEVICE_COUNT; i++)
   {
-    _ret = _ret || checkSchedule(time, slots[i]);
+    pv.total_power += getPvData(i, inData, 19, 2) / 10;
+    pv.total_prod_today += getPvData(i, inData, 21, 2);
+    pv.total_prod += getPvData(i, inData, 23, 4);
+    pv.temperature = getPvData(i, inData, 27, 2) / 10.0f;
   }
-  return _ret;
+  return true;
 }
 
 void sendDataToSerial(char operation)
@@ -514,9 +285,12 @@ void sendDataToSerial(char operation)
   case 0x01:
     serializeJsonPretty(jsonDocument, data);
     break;
-  case 0x02:
-    serializeJsonPretty(settings(), data);
+  case 0x02: {
+    JsonDocument settingsDocument;
+    settingsDocument.set(operationController.preferences());
+    serializeJsonPretty(settingsDocument, data);
     break;
+  }
   case 0x03:
     // NOP
     break;
@@ -526,205 +300,48 @@ void sendDataToSerial(char operation)
     serializeJsonPretty(doc, data);
     break;
   }
-  printSerial(data);
+  sendSerialText(data);
 }
 
-JsonDocument settings(void)
+uint32_t getPvData(uint8_t pvNumber, const uint8_t *data,
+  uint8_t startByte, uint8_t byteCount)
 {
-  u8_t size = sizeof(coSlots) / sizeof(ScheduleSlot);
-  JsonDocument jsonscheduleSlots;
-  JsonArray arrayJsonscheduleSlots = jsonscheduleSlots.to<JsonArray>();
-  for (int i = 0; i < size; i++)
-  {
-    arrayJsonscheduleSlots.add(coSlots[i]);
+  uint32_t ret = 0;
+  for (int i = 0; i < byteCount; i++) {
+    ret = (ret << 8) | data[startByte + i + pvNumber * 40];
   }
-  
-  size = sizeof(cwuSlots) / sizeof(ScheduleSlot);
-  JsonDocument jsonCwuSlots;
-  JsonArray arrayJsonCwuSlots = jsonCwuSlots.to<JsonArray>();
-  for (int i = 0; i < size; i++)
-  {
-    arrayJsonCwuSlots.add(cwuSlots[i]);
-  }
-  
-  JsonDocument jsonSettings;
-  jsonSettings["settings"] = jsonscheduleSlots;
-  jsonSettings["cwu_settings"] = arrayJsonCwuSlots;
-  return jsonSettings;
-}
-
-long _getPVData(uint8_t pv_nr, char *inData, uint8_t b_start, uint8_t b_count)
-{
-  long ret = 0;
-  for (int i = 0; i < b_count; i++)
-    ret += (int)inData[b_start + i + pv_nr * 40] << ((b_count - i - 1) * 8);
 
   return ret;
 }
 
-void serverRoute(void) {
-  server.on("/api/operation", []
-    {
-      if (server.method() != HTTP_POST) {
-        server.send(405, "text/plain", "Method Not Allowed");
-        return;
-      }
+// TODO(server): Scheduler must perform the MANUAL -> AUTO transition.
+// This firmware applies only work_mode changes received from the server.
+void operationExecute(JsonDocument ddd) {
+  JsonObject doc = ddd.as<JsonObject>();
+  if (doc.isNull() || doc.size() == 0) return;
 
-      JsonDocument ddd;
-      DeserializationError error = deserializeJson(ddd, server.arg("plain"));
-      if (error) {
-        server.send(405, "text/plain", "Bad JSON");
-        return;
-      }
-      String data = operationExecute(ddd);
-      server.send(200, "application/json", data);
-    }
-  );
-
-  server.on("/api/settings",  HTTP_GET, []
-    {
-      String data = "";
-      serializeJsonPretty(settings(), data);
-      server.send(200, "application/json", data);
-    }
-  );
-
-  server.on("/api/hp", []
-    {
-      String data = "";
-      serializeJsonPretty(jsonDocument, data);
-      server.send(200, "application/json", data);
-    }
-  );
-
-  server.on("/", []
-    {
-      server.sendHeader("Content-Encoding", "gzip");
-      server.send_P(200, "text/html", (const char *)static_files::f_index_html_contents, static_files::f_index_html_size); 
-    }
-  );
-  server.on("/settings", []
-    {
-      server.sendHeader("Content-Encoding", "gzip");
-      server.send_P(200, "text/html", (const char *)static_files::f_index_html_contents, static_files::f_index_html_size); 
-    }
-  );
-
-  // Create a route handler for each of the build artifacts
-  for (int i = 0; i < static_files::num_of_files; i++)
-  {
-    server.on(static_files::files[i].path, [i]
-        {
-          server.sendHeader("Content-Encoding", "gzip");
-          server.send_P(200, static_files::files[i].type, (const char *)static_files::files[i].contents, static_files::files[i].size); 
-        }
-    );
-  }
+  OperationParseResult parsed = parseServerOperation(doc);
+  operationValidationErrors += parsed.invalidValues;
+  operationController.applyServerPatch(parsed.state);
+  applyControllerOutputs();
 }
 
-String operationExecute(JsonDocument ddd) {
-  prefs.end();
-  prefs.begin("hp", false);
+void applyControllerOutputs()
+{
+  const HpPreferences &prefs = operationController.preferences();
+  bool modeChanged = operationController.takeModeChanged();
+  bool relayChanged = operationController.takeRelayChanged();
 
-
-  JsonObject doc  = ddd.as<JsonObject>();
-  String data = "";
-  serializeJsonPretty(doc, data);
-
-  //work_mode
-  if (!doc["work_mode"].isNull()) {
-    jsonAsString(doc["work_mode"]) == "M" ?
-      workMode = WORK_MODE::MANUAL :
-      jsonAsString(doc["work_mode"]) == "A" ?
-        workMode = WORK_MODE::AUTO :
-        jsonAsString(doc["work_mode"]) == "PV" ?
-          workMode = WORK_MODE::AUTO_PV :
-          jsonAsString(doc["work_mode"]) == "CWU" ?
-            workMode = WORK_MODE::CWU :
-            workMode = WORK_MODE::OFF;  
-            
-    prefs.putShort("workMode", workMode);
+  if (relayChanged) {
+    digitalWriteA(tft, RELAY_HP_CO, operationController.coRelay());
+    digitalWriteA(tft, RELAY_HP_CWU, operationController.cwuRelay());
   }
 
-  //co_min
-  if (!doc["co_min"].isNull() && jsonAsString(doc["co_min"]) != "" && jsonAsString(doc["co_min"]).toDouble() > 0) {
-    if (jsonAsString(doc["co_min"]).toDouble() < 0) {
-      return "";
-    }
-    prefs.putDouble("co_min", jsonAsString(doc["co_min"]).toDouble());      
-  }
-  //co_max
-  if (!doc["co_max"].isNull() && jsonAsString(doc["co_max"]) != "" && jsonAsString(doc["co_max"]).toDouble() > 0) {
-    if (jsonAsString(doc["co_max"]).toDouble() < 0  || jsonAsString(doc["co_max"]).toDouble() > 50) {
-      return "";
-    }
-    prefs.putDouble("co_max", jsonAsString(doc["co_max"]).toDouble());
-  }
-  //cwu_min
-  if (!doc["cwu_min"].isNull() && jsonAsString(doc["cwu_min"]) != "" && jsonAsString(doc["cwu_min"]).toDouble() > 0) {
-    if (jsonAsString(doc["cwu_min"]).toDouble() < 0) {
-      return "";
-    }
-    prefs.putDouble("cwu_min", jsonAsString(doc["cwu_min"]).toDouble());
-  }
-  //cwu_max
-  if (!doc["cwu_max"].isNull() && jsonAsString(doc["cwu_max"]) != "" && jsonAsString(doc["cwu_max"]).toDouble() > 0) {
-    if (jsonAsString(doc["cwu_max"]).toDouble() < 0  || jsonAsString(doc["cwu_max"]).toDouble() > 50) {
-      return "";
-    }
-    prefs.putDouble("cwu_max", jsonAsString(doc["cwu_max"]).toDouble());
-  }
-  
-  //sump_heater
-  if (!doc["sump_heater"].isNull() && jsonAsString(doc["sump_heater"]) != "" ) 
-  {
-    (jsonAsString(doc["sump_heater"]) == "1") ?
-      serialOpertion = sendRequest(SERIAL_OPERATION::SET_SUMP_HEATER_ON) :
-      serialOpertion = sendRequest(SERIAL_OPERATION::SET_SUMP_HEATER_OFF);
-  }
+  if (modeChanged || relayChanged) PrintMode(tft, prefs.workMode);
 
-  //cold_pomp
-  if (!doc["cold_pomp"].isNull() && jsonAsString(doc["cold_pomp"]) != "" ) 
-  {
-    (jsonAsString(doc["cold_pomp"]) == "1") ? 
-      serialOpertion = sendRequest(SERIAL_OPERATION::SET_COLD_POMP_ON) :
-      serialOpertion = sendRequest(SERIAL_OPERATION::SET_COLD_POMP_OFF);
-  }
-
-  //hot_pomp
-  if (!doc["hot_pomp"].isNull() && jsonAsString(doc["hot_pomp"]) != "" ) 
-  {
-    (jsonAsString(doc["hot_pomp"]) == "1") ?
-      serialOpertion = sendRequest(SERIAL_OPERATION::SET_HOT_POMP_ON) : 
-      serialOpertion = sendRequest(SERIAL_OPERATION::SET_HOT_POMP_OFF);
-  }
-
-  //force
-  if (!doc["force"].isNull() && jsonAsString(doc["force"]) != "" ) 
-  {
-    (jsonAsString(doc["force"]) == "1") ?
-      serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_ON) : 
-      serialOpertion = sendRequest(SERIAL_OPERATION::SET_HP_FORCE_OFF);
-  }
-
-  //working_watt
-  if (!doc["working_watt"].isNull() && jsonAsString(doc["working_watt"]) != "" ) 
-  {
-    serialOpertion = sendRequest(SERIAL_OPERATION::SET_WORKING_WATT, jsonAsString(doc["working_watt"]).toDouble());  
-  }
-
-  //EEV_max_pulse_open
-  if (!doc["eev_max_pulse_open"].isNull() && jsonAsString(doc["eev_max_pulse_open"]) != "" ) 
-  {
-    serialOpertion = sendRequest(SERIAL_OPERATION::SET_EEV_MAXPULSES_OPEN, jsonAsString(doc["eev_max_pulse_open"]).toDouble());  
-  }
-  
-  if (!doc["eev_setpoint"].isNull() && jsonAsString(doc["eev_setpoint"]) != "" ) 
-  {
-    serialOpertion = sendRequest(SERIAL_OPERATION::SET_EEV_SETPOINT, jsonAsString(doc["eev_setpoint"]).toDouble());  
-  }
-  
-  return data;
+  jsonDocument["co_pomp"] = operationController.coRelay();
+  jsonDocument["cwu_pomp"] = operationController.cwuRelay();
+  jsonDocument["work_mode"] = prefs.workMode;
 }
 
 
@@ -733,7 +350,7 @@ void putHpDataToCloud(void) {
     return;
   }
   
-  String response = putDataToCloud("hp/add", jsonDocument);
+  String response = cloudClient.post("hp/add", jsonDocument);
   if (response == "" ) {
     return;
   } 
@@ -741,63 +358,14 @@ void putHpDataToCloud(void) {
   JsonDocument ddd;
   DeserializationError error = deserializeJson(ddd, response);
   if (error) {
-    printSerial("Bad JSON");
-    delay(300);
+    cloudResponseParseErrors++;
     return;
   }  
   
-  printSerial(ddd["operation"]);
-  operationExecute(ddd["operation"]);
-}
-
-String putDataToCloud(String path, JsonDocument data) {
-
-  if (WiFi.status() != WL_CONNECTED) {
-      printSerial("Brak połączenia WiFi");
-      delay(100);
-      return "";
-  }
-
-  http.begin("https://chpc-web.onrender.com/api/" + path);  // Adres serwera lub API
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Cache-Control", "no-cache");
-
-  String payload;
-  serializeJsonPretty(data, payload);
-  
-  http.setTimeout(1000);
-  int httpCode = http.POST(payload);
-  http.end();
-
-  if (httpCode < 0 ) {
-    // char buffer[128];  // bufor na wynik formatowania
-    // sprintf(buffer, "Błąd żądania: %s\n", http.errorToString(httpCode).c_str());
-    // printSerial(buffer);
-    return "";
-  }   
-  return http.getString();
-}
-
-void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
-  switch (type) {
-    case WStype_CONNECTED:
-      webSocket.sendTXT("ESP32");
-      break;
-    case WStype_TEXT:
-        char oper[255];
-        sprintf(oper, "%s",payload);
-        if (strcmp("operation",oper) == 0 ) {
-          putHpDataToCloud();
-        }
-        break;
-    case WStype_DISCONNECTED:
-      break;
-    default:
-      break;
+  JsonObject operation = ddd["operation"].as<JsonObject>();
+  if (!operation.isNull() && operation.size() > 0) {
+    JsonDocument operationDocument;
+    operationDocument.set(operation);
+    operationExecute(operationDocument);
   }
 }
-
-/*
-{"Tbe":"23.6","Tae":"23.3","Tco":"23.7","Tho":"23.4","Ttarget":"24.8","Tsump":"23.9","EEV_dt":"0.0","Tcwu":"25.0","Tmax":"18.5","Tmin":"13.0","Tcwu_max":"26.0","Tcwu_min":"23.0","Watts":"72","EEV":"2.0","EEV_pos":"50","HCS":0,"CCS":0,"HPS":0,"F":0,"CWUS":0,"CWU":1,"CO":1}
-"Tbe":"10.9","Tae":"13.6","Tco":"0.0","Tho":"50.2","Ttarget":"41.4","Tsump":"52.6","EEV_dt":"2.6","Tmax":"45.0","Tmin":"35.0","Watts":"3199","EEV":"0.5","EEV_pos":"60","EEV_pulse":"1","SHS":0,"HCS":1,"CCS":1,"HPS":1,"F":1,"CO":1,"WWatt":"3800.00","EEVmax":"60","lt_pow":"625","lt_hp_on":"807"}
-*/

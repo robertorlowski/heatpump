@@ -1,0 +1,48 @@
+#pragma once
+
+#include <command_sink.hpp>
+#include <operation_types.hpp>
+
+class OperationController {
+public:
+  explicit OperationController(CommandSink &commands, long pvForceThreshold = 2000);
+
+  void applyServerPatch(const ServerOperationState &patch);
+  void updatePv(const PV &pv);
+  void tick();
+
+  const HpPreferences &preferences() const;
+  const ServerOperationState &serverState() const;
+  bool coRelay() const;
+  bool cwuRelay() const;
+  bool takeRelayChanged();
+  bool takeModeChanged();
+  uint32_t preferenceValidationErrorCount() const;
+
+private:
+  CommandSink &commands;
+  long pvForceThreshold;
+  HpPreferences prefs;
+  ServerOperationState desired;
+  ServerOperationState lastScheduled;
+  ServerValue<bool> lastHpCo;
+  ServerValue<double> lastSetpoint;
+  ServerValue<double> lastDelta;
+  PV pv;
+  bool coRelayState = false;
+  bool cwuRelayState = false;
+  bool relayChanged = false;
+  bool modeChanged = false;
+  bool retryPending = false;
+  uint32_t preferenceValidationErrors = 0;
+
+  void reconcile();
+  void scheduleOffSequence();
+  void updateRelayState(WORK_MODE mode);
+  bool isCoMode(WORK_MODE mode) const;
+  bool scheduleBool(ServerValue<bool> &last, bool value,
+    SERIAL_OPERATION onOperation, SERIAL_OPERATION offOperation,
+    bool always = false, bool priority = false);
+  bool scheduleDouble(ServerValue<double> &last, double value,
+    SERIAL_OPERATION operation);
+};
