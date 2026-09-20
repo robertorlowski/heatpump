@@ -90,8 +90,8 @@ void testOnlyChangedServerFieldIsScheduled()
   RecordingSink sink;
   OperationController controller(sink);
   ServerOperationState patch = modePatch(WORK_MODE::AUTO);
-  patch.hotPomp.present = true;
-  patch.hotPomp.value = true;
+  patch.hotPump.present = true;
+  patch.hotPump.value = true;
   controller.applyServerPatch(patch);
 
   sink.clear();
@@ -99,12 +99,12 @@ void testOnlyChangedServerFieldIsScheduled()
   TEST_ASSERT_EQUAL_UINT32(0, sink.count);
 
   ServerOperationState changed;
-  changed.hotPomp.present = true;
-  changed.hotPomp.value = false;
+  changed.hotPump.present = true;
+  changed.hotPump.value = false;
   controller.applyServerPatch(changed);
 
   TEST_ASSERT_EQUAL_UINT32(1, sink.count);
-  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_HOT_POMP_OFF,
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_HOT_PUMP_OFF,
     sink.commands[0].operation);
 }
 
@@ -115,8 +115,8 @@ void testOffHasPriorityAndIsNotRepeated()
   ServerOperationState running = modePatch(WORK_MODE::AUTO);
   running.force.present = true;
   running.force.value = true;
-  running.hotPomp.present = true;
-  running.hotPomp.value = true;
+  running.hotPump.present = true;
+  running.hotPump.value = true;
   controller.applyServerPatch(running);
 
   sink.clear();
@@ -126,8 +126,8 @@ void testOffHasPriorityAndIsNotRepeated()
   TEST_ASSERT_EQUAL_UINT32(4, sink.count);
   TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_HP_CO_OFF, sink.commands[0].operation);
   TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_HP_FORCE_OFF, sink.commands[1].operation);
-  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_HOT_POMP_OFF, sink.commands[2].operation);
-  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_COLD_POMP_OFF, sink.commands[3].operation);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_HOT_PUMP_OFF, sink.commands[2].operation);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_COLD_PUMP_OFF, sink.commands[3].operation);
   TEST_ASSERT_TRUE(sink.priorities[0]);
   TEST_ASSERT_TRUE(sink.priorities[1]);
   TEST_ASSERT_TRUE(sink.priorities[2]);
@@ -145,8 +145,8 @@ void testRelaysFollowServerCoPumpState()
   RecordingSink sink;
   OperationController controller(sink);
   ServerOperationState patch = modePatch(WORK_MODE::AUTO);
-  patch.coPomp.present = true;
-  patch.coPomp.value = false;
+  patch.coPump.present = true;
+  patch.coPump.value = false;
 
   controller.applyServerPatch(patch);
 
@@ -159,8 +159,8 @@ void testCwuModeDisablesLocalRelays()
   RecordingSink sink;
   OperationController controller(sink);
   ServerOperationState running = modePatch(WORK_MODE::AUTO);
-  running.coPomp.present = true;
-  running.coPomp.value = true;
+  running.coPump.present = true;
+  running.coPump.value = true;
   controller.applyServerPatch(running);
   TEST_ASSERT_TRUE(controller.coRelay());
   TEST_ASSERT_TRUE(controller.cwuRelay());
@@ -169,6 +169,66 @@ void testCwuModeDisablesLocalRelays()
 
   TEST_ASSERT_FALSE(controller.coRelay());
   TEST_ASSERT_FALSE(controller.cwuRelay());
+}
+
+void testLocalOffIsIndependentFromCloudWorkMode()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  controller.applyServerPatch(modePatch(WORK_MODE::AUTO));
+  sink.clear();
+
+  controller.setControllerMode(ControllerMode::OFF);
+
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ControllerMode::OFF),
+    static_cast<int>(controller.controllerMode()));
+  TEST_ASSERT_EQUAL_INT(WORK_MODE::AUTO, controller.preferences().workMode);
+  TEST_ASSERT_EQUAL_UINT32(4, sink.count);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_HP_CO_OFF, sink.commands[0].operation);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_HP_FORCE_OFF, sink.commands[1].operation);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_HOT_PUMP_OFF, sink.commands[2].operation);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_COLD_PUMP_OFF, sink.commands[3].operation);
+  TEST_ASSERT_FALSE(controller.coRelay());
+  TEST_ASSERT_FALSE(controller.cwuRelay());
+
+  controller.applyServerPatch(modePatch(WORK_MODE::CWU));
+  TEST_ASSERT_EQUAL_INT(WORK_MODE::AUTO, controller.preferences().workMode);
+}
+
+void testManualModeDoesNotSendOrApplyCloudCommands()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  controller.applyServerPatch(modePatch(WORK_MODE::AUTO));
+  sink.clear();
+
+  controller.setControllerMode(ControllerMode::MANUAL_CO);
+  controller.applyServerPatch(modePatch(WORK_MODE::CWU));
+
+  PV highProduction;
+  highProduction.pv_power = true;
+  highProduction.total_power = 5000;
+  controller.updatePv(highProduction);
+  controller.tick();
+
+  TEST_ASSERT_EQUAL_UINT32(0, sink.count);
+  TEST_ASSERT_EQUAL_INT(WORK_MODE::AUTO, controller.preferences().workMode);
+  TEST_ASSERT_TRUE(controller.coRelay());
+  TEST_ASSERT_FALSE(controller.cwuRelay());
+}
+
+void testManualCwuDisablesRelaysWithoutSendingCommands()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  controller.applyServerPatch(modePatch(WORK_MODE::AUTO));
+  sink.clear();
+
+  controller.setControllerMode(ControllerMode::MANUAL_CWU);
+
+  TEST_ASSERT_EQUAL_UINT32(0, sink.count);
+  TEST_ASSERT_FALSE(controller.coRelay());
+  TEST_ASSERT_TRUE(controller.cwuRelay());
 }
 
 void testInvalidTemperatureRangeIsIgnored()
@@ -335,6 +395,9 @@ void setup()
   RUN_TEST(testPartialPatchPreservesPreviousServerValues);
   RUN_TEST(testRelaysFollowServerCoPumpState);
   RUN_TEST(testCwuModeDisablesLocalRelays);
+  RUN_TEST(testLocalOffIsIndependentFromCloudWorkMode);
+  RUN_TEST(testManualModeDoesNotSendOrApplyCloudCommands);
+  RUN_TEST(testManualCwuDisablesRelaysWithoutSendingCommands);
   RUN_TEST(testInvalidTemperatureRangeIsIgnored);
   RUN_TEST(testRejectedQueueCommandIsRetried);
   RUN_TEST(testOperationParserAcceptsTypedValues);

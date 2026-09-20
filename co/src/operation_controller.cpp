@@ -7,6 +7,7 @@ OperationController::OperationController(CommandSink &commands, long pvForceThre
 
 void OperationController::applyServerPatch(const ServerOperationState &patch)
 {
+  if (localMode != ControllerMode::CLOUD) return;
   if (!hasServerOperationValues(patch)) return;
 
   ServerOperationState accepted = patch;
@@ -50,15 +51,55 @@ void OperationController::applyServerPatch(const ServerOperationState &patch)
   reconcile();
 }
 
+void OperationController::setControllerMode(ControllerMode mode)
+{
+  if (localMode == mode) return;
+
+  localMode = mode;
+  modeChanged = true;
+  retryPending = false;
+
+  switch (localMode) {
+    case ControllerMode::OFF:
+      setRelayState(false, false);
+      scheduleOffSequence();
+      break;
+
+    case ControllerMode::CLOUD:
+      resetScheduledState();
+      reconcile();
+      break;
+
+    case ControllerMode::MANUAL_CO:
+      setRelayState(true, false);
+      break;
+
+    case ControllerMode::MANUAL_CWU:
+      setRelayState(false, true);
+      break;
+  }
+}
+
 void OperationController::updatePv(const PV &newPv)
 {
   pv = newPv;
-  if (prefs.workMode == WORK_MODE::AUTO_PV) reconcile();
+  if (localMode == ControllerMode::CLOUD
+    && prefs.workMode == WORK_MODE::AUTO_PV) reconcile();
 }
 
 void OperationController::tick()
 {
-  if (retryPending) reconcile();
+  if (!retryPending) return;
+  if (localMode == ControllerMode::CLOUD) reconcile();
+  if (localMode == ControllerMode::OFF) {
+    retryPending = false;
+    scheduleOffSequence();
+  }
+}
+
+ControllerMode OperationController::controllerMode() const
+{
+  return localMode;
 }
 
 const HpPreferences &OperationController::preferences() const
@@ -143,10 +184,26 @@ void OperationController::scheduleOffSequence()
     SERIAL_OPERATION::SET_HP_CO_ON, SERIAL_OPERATION::SET_HP_CO_OFF, true, true);
   scheduleBool(lastScheduled.force, false,
     SERIAL_OPERATION::SET_HP_FORCE_ON, SERIAL_OPERATION::SET_HP_FORCE_OFF, true, true);
-  scheduleBool(lastScheduled.hotPomp, false,
-    SERIAL_OPERATION::SET_HOT_POMP_ON, SERIAL_OPERATION::SET_HOT_POMP_OFF, true, true);
-  scheduleBool(lastScheduled.coldPomp, false,
-    SERIAL_OPERATION::SET_COLD_POMP_ON, SERIAL_OPERATION::SET_COLD_POMP_OFF, true, true);
+  scheduleBool(lastScheduled.hotPump, false,
+    SERIAL_OPERATION::SET_HOT_PUMP_ON, SERIAL_OPERATION::SET_HOT_PUMP_OFF, true, true);
+  scheduleBool(lastScheduled.coldPump, false,
+    SERIAL_OPERATION::SET_COLD_PUMP_ON, SERIAL_OPERATION::SET_COLD_PUMP_OFF, true, true);
+}
+
+void OperationController::resetScheduledState()
+{
+  lastScheduled = {};
+  lastHpCo = {};
+  lastSetpoint = {};
+  lastDelta = {};
+}
+
+void OperationController::setRelayState(bool coEnabled, bool cwuEnabled)
+{
+  if (coRelayState == coEnabled && cwuRelayState == cwuEnabled) return;
+  coRelayState = coEnabled;
+  cwuRelayState = cwuEnabled;
+  relayChanged = true;
 }
 
 void OperationController::updateRelayState(WORK_MODE mode)
@@ -154,18 +211,15 @@ void OperationController::updateRelayState(WORK_MODE mode)
   bool coMode = isCoMode(mode);
   bool requestedCoRelay = !coMode
     ? false
-    : (desired.coPomp.present ? desired.coPomp.value : coMode);
+    : (desired.coPump.present ? desired.coPump.value : coMode);
   bool requestedCwuRelay = requestedCoRelay;
 
-  if (coRelayState != requestedCoRelay || cwuRelayState != requestedCwuRelay) {
-    coRelayState = requestedCoRelay;
-    cwuRelayState = requestedCwuRelay;
-    relayChanged = true;
-  }
+  setRelayState(requestedCoRelay, requestedCwuRelay);
 }
 
 void OperationController::reconcile()
 {
+  if (localMode != ControllerMode::CLOUD) return;
   retryPending = false;
   WORK_MODE mode = prefs.workMode;
   bool coMode = isCoMode(mode);
@@ -186,25 +240,25 @@ void OperationController::reconcile()
       SERIAL_OPERATION::SET_SUMP_HEATER_ON, SERIAL_OPERATION::SET_SUMP_HEATER_OFF);
 
   if (mode == WORK_MODE::OFF) {
-    scheduleBool(lastScheduled.coldPomp, false,
-      SERIAL_OPERATION::SET_COLD_POMP_ON, SERIAL_OPERATION::SET_COLD_POMP_OFF,
+    scheduleBool(lastScheduled.coldPump, false,
+      SERIAL_OPERATION::SET_COLD_PUMP_ON, SERIAL_OPERATION::SET_COLD_PUMP_OFF,
       false, true);
-  } else if (desired.coldPomp.present) {
-    scheduleBool(lastScheduled.coldPomp, desired.coldPomp.value,
-      SERIAL_OPERATION::SET_COLD_POMP_ON, SERIAL_OPERATION::SET_COLD_POMP_OFF);
+  } else if (desired.coldPump.present) {
+    scheduleBool(lastScheduled.coldPump, desired.coldPump.value,
+      SERIAL_OPERATION::SET_COLD_PUMP_ON, SERIAL_OPERATION::SET_COLD_PUMP_OFF);
   }
 
   if (mode == WORK_MODE::OFF) {
-    scheduleBool(lastScheduled.hotPomp, false,
-      SERIAL_OPERATION::SET_HOT_POMP_ON, SERIAL_OPERATION::SET_HOT_POMP_OFF,
+    scheduleBool(lastScheduled.hotPump, false,
+      SERIAL_OPERATION::SET_HOT_PUMP_ON, SERIAL_OPERATION::SET_HOT_PUMP_OFF,
       false, true);
     scheduleBool(lastScheduled.force, false,
       SERIAL_OPERATION::SET_HP_FORCE_ON, SERIAL_OPERATION::SET_HP_FORCE_OFF,
       false, true);
   } else {
-    if (desired.hotPomp.present)
-      scheduleBool(lastScheduled.hotPomp, desired.hotPomp.value,
-        SERIAL_OPERATION::SET_HOT_POMP_ON, SERIAL_OPERATION::SET_HOT_POMP_OFF);
+    if (desired.hotPump.present)
+      scheduleBool(lastScheduled.hotPump, desired.hotPump.value,
+        SERIAL_OPERATION::SET_HOT_PUMP_ON, SERIAL_OPERATION::SET_HOT_PUMP_OFF);
 
     if (mode == WORK_MODE::AUTO_PV) {
       bool force = pv.pv_power && pv.total_power >= pvForceThreshold;

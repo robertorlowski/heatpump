@@ -62,7 +62,7 @@ lokalnego przekaźnika.
 ### `utils.cpp`
 
 - zawiera implementację prezentacji, inicjalizacji i konwersji JSON,
-- `utils.hpp` udostępnia wyłącznie deklaracje.
+- `device_io.hpp` udostępnia wyłącznie deklaracje.
 
 ## 3. Przepływ operacji
 
@@ -140,9 +140,22 @@ serwera.
 | `CWU` | ON | CWU | wyłączone | z serwera |
 | `OFF` | OFF | nie jest wysyłany | wyłączone | zawsze OFF |
 
-Lokalne harmonogramy CO/CWU i obsługa przycisku zostały usunięte. Przejście
-`MANUAL -> AUTO` musi wykonać serwer — pozostawiono o tym `TODO` przy parserze
-operacji.
+Lokalne harmonogramy CO/CWU zostały usunięte. Przycisk na pinie 5 przełącza
+niezależny tryb sterownika:
+`OFF -> CLOUD -> MANUAL_CO -> MANUAL_CWU -> OFF`.
+
+- `OFF` lokalnie wyłącza pompę i przekaźniki, ale nie zmienia `work_mode`
+  otrzymanego z chmury.
+- `CLOUD` stosuje sterowanie i ustawienia z serwera.
+- `MANUAL_CO` nie wysyła komend sterujących do pompy, włącza lokalny
+  przekaźnik CO, wyłącza przekaźnik CWU i pozostawia aktywne odczyty oraz
+  telemetrię.
+- `MANUAL_CWU` nie wysyła komend sterujących do pompy, wyłącza lokalny
+  przekaźnik CO, włącza przekaźnik CWU i pozostawia aktywne odczyty oraz
+  telemetrię.
+
+Pole `controller_mode` w telemetrii odróżnia lokalny stan sterownika od
+serwerowego `work_mode`.
 
 ### `OFF`
 

@@ -8,9 +8,11 @@ public:
   explicit OperationController(CommandSink &commands, long pvForceThreshold = 2000);
 
   void applyServerPatch(const ServerOperationState &patch);
+  void setControllerMode(ControllerMode mode);
   void updatePv(const PV &pv);
   void tick();
 
+  ControllerMode controllerMode() const;
   const HpPreferences &preferences() const;
   const ServerOperationState &serverState() const;
   bool coRelay() const;
@@ -29,6 +31,7 @@ private:
   ServerValue<double> lastSetpoint;
   ServerValue<double> lastDelta;
   PV pv;
+  ControllerMode localMode = ControllerMode::CLOUD;
   bool coRelayState = false;
   bool cwuRelayState = false;
   bool relayChanged = false;
@@ -38,6 +41,8 @@ private:
 
   void reconcile();
   void scheduleOffSequence();
+  void resetScheduledState();
+  void setRelayState(bool coEnabled, bool cwuEnabled);
   void updateRelayState(WORK_MODE mode);
   bool isCoMode(WORK_MODE mode) const;
   bool scheduleBool(ServerValue<bool> &last, bool value,

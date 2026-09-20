@@ -1,223 +1,200 @@
 #include <Arduino.h>
-#include <utils.hpp>
 #include <cloud_client.hpp>
-#include <cop_estimator.hpp>
+#include <device_io.hpp>
+#include <hardware_config.hpp>
+#include <heat_pump_data_processor.hpp>
+#include <json_converters.hpp>
 #include <operation_controller.hpp>
 #include <operation_parser.hpp>
+#include <pv_data_processor.hpp>
 #include <serial_bus.hpp>
+#include <telemetry.hpp>
 
-constexpr uint8_t PV_DEVICE_COUNT = 5;
 constexpr int64_t HP_FORCE_ON = 2000;
 constexpr unsigned long MILLIS_REFRESH_ACTIVE = 10000;
 constexpr unsigned long MILLIS_REFRESH_IDLE = 30000;
 unsigned long refreshInterval = MILLIS_REFRESH_IDLE;
 constexpr unsigned long TIME_SYNC_INTERVAL = 6UL * 60UL * 60UL * 1000UL;
 constexpr unsigned long TIME_SYNC_RETRY_INTERVAL = 5UL * 60UL * 1000UL;
+constexpr unsigned long BUTTON_DEBOUNCE_MS = 50;
 
 
 
 // global variables
 RTC_DS3231 rtc;
-Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_CLK, TFT_RST);
-JsonDocument jsonDocument;
+Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS_PIN, TFT_DC_PIN, TFT_MOSI_PIN,
+  TFT_CLOCK_PIN, TFT_RESET_PIN);
+Telemetry telemetry;
 DateTime rtcTime;
 PV pv;
 SerialBus serialBus(Serial);
 OperationController operationController(serialBus, HP_FORCE_ON);
 CloudClient cloudClient;
-CopEstimator copEstimator;
+HeatPumpDataProcessor heatPumpDataProcessor;
+PvDataProcessor pvDataProcessor;
 
 // temporary variables
-unsigned long millisRefreshAt = -1;
-unsigned long millisTimeSyncAt = 0;
+unsigned long lastRefreshAt = -1;
+unsigned long lastTimeSyncAt = 0;
 unsigned long timeSyncInterval = TIME_SYNC_RETRY_INTERVAL;
-uint32_t readCounter = 0;
+uint32_t scheduledReadCount = 0;
 uint32_t pvCrcErrors = 0;
 uint32_t operationValidationErrors = 0;
 uint32_t cloudResponseParseErrors = 0;
 uint32_t hpJsonErrors = 0;
 uint32_t pvFrameErrors = 0;
 bool cloudPostPending = false;
+bool buttonStableState = false;
+bool buttonCandidateState = false;
+unsigned long buttonCandidateSince = 0;
 
 // global functions
-void sendDataToSerial(char operation);
-uint32_t getPvData(uint8_t pvNumber, const uint8_t *data,
-  uint8_t startByte, uint8_t byteCount);
-bool collectDataFromPV(const uint8_t *inData, size_t length);
-void collectDataFromSerial();
-void putHpDataToCloud(void);
-void operationExecute(JsonDocument doc);
-void getDataFromHpPv(void);
-void calculateCOP(JsonObject hp);
+void respondToSerialRequest(char operation);
+void processSerialInput();
+void postTelemetryToCloud();
+void applyServerOperation(JsonDocument operationDocument);
+void scheduleNextDeviceRead();
 void applyControllerOutputs(void);
+void processControlButton();
+ControllerMode nextControllerMode(ControllerMode currentMode);
 
 // main
 void setup()
 {
-  serialBus.begin(9600, SERIAL_BUFFER);
+  serialBus.begin(9600, SERIAL_BUFFER_SIZE);
 
   Wire.begin();
   rtc.begin();
 
-  pinMode(RELAY_HP_CWU, OUTPUT);
-  pinMode(RELAY_HP_CO, OUTPUT);
-  pinMode(PWR, OUTPUT);
+  pinMode(RELAY_HP_CWU_PIN, OUTPUT);
+  pinMode(RELAY_HP_CO_PIN, OUTPUT);
+  pinMode(POWER_PIN, OUTPUT);
+  pinMode(CONTROL_BUTTON_PIN, INPUT);
 
-  digitalWrite(PWR, HIGH);
-  bool timeSynchronized = initialize(rtc, tft);
-  millisTimeSyncAt = millis();
+  digitalWrite(POWER_PIN, HIGH);
+  buttonStableState = digitalRead(CONTROL_BUTTON_PIN) == HIGH;
+  buttonCandidateState = buttonStableState;
+  bool timeSynchronized = initializeDevice(rtc, tft);
+  lastTimeSyncAt = millis();
   timeSyncInterval = timeSynchronized
     ? TIME_SYNC_INTERVAL : TIME_SYNC_RETRY_INTERVAL;
-
-  jsonDocument["HP"].to<JsonObject>();
-  jsonDocument["PV"].to<JsonObject>();
 
   cloudClient.begin();
 }
 
 void loop()
 {
+  processControlButton();
   serialBus.tick();
   operationController.tick();
-  collectDataFromSerial();
+  processSerialInput();
   serialBus.tick();
   cloudClient.tick();
 
   if (cloudClient.takeOperationRequest()) cloudPostPending = true;
 
-  if (millis() - millisTimeSyncAt >= timeSyncInterval && serialBus.isIdle()) {
-    millisTimeSyncAt = millis();
-    timeSyncInterval = synchronizeRtc(rtc)
+  if (millis() - lastTimeSyncAt >= timeSyncInterval && serialBus.isIdle()) {
+    lastTimeSyncAt = millis();
+    timeSyncInterval = synchronizeClock(rtc)
       ? TIME_SYNC_INTERVAL : TIME_SYNC_RETRY_INTERVAL;
   }
 
   if (cloudPostPending && serialBus.isIdle()) {
     cloudPostPending = false;
-    putHpDataToCloud();
+    postTelemetryToCloud();
   }
 
-  if (millisRefreshAt == static_cast<unsigned long>(-1)
-    || millis() - millisRefreshAt > refreshInterval)
+  if (lastRefreshAt == static_cast<unsigned long>(-1)
+    || millis() - lastRefreshAt > refreshInterval)
   {
-    millisRefreshAt = millis();
+    lastRefreshAt = millis();
   
     rtcTime = rtc.now(); // Get current time from RTC
     const HpPreferences &prefs = operationController.preferences();
-    bool co_pomp = operationController.coRelay();
-    bool cwu_pomp = operationController.cwuRelay();
-    
-    jsonDocument["time"] = rtcTime;
-    jsonDocument["co_pomp"] = co_pomp;
-    jsonDocument["cwu_pomp"] = cwu_pomp; 
-    jsonDocument["pv_power"] = pv.pv_power;
-    jsonDocument["work_mode"] = prefs.workMode;
-    jsonDocument["co_min"] = prefs.coMin;
-    jsonDocument["co_max"] = prefs.coMax;
-    jsonDocument["cwu_min"] = prefs.cwuMin;
-    jsonDocument["cwu_max"] = prefs.cwuMax;
-    jsonDocument["serial_queue_overflow"] = serialBus.queueOverflowCount();
-    jsonDocument["serial_read_timeout"] = serialBus.readTimeoutCount();
-    jsonDocument["serial_receive_overflow"] = serialBus.receiveOverflowCount();
-    jsonDocument["pv_crc_error"] = pvCrcErrors;
-    jsonDocument["cloud_http_status"] = cloudClient.lastHttpStatus();
-    jsonDocument["cloud_request_error"] = cloudClient.requestErrorCount();
-    jsonDocument["websocket_disconnect"] = cloudClient.webSocketDisconnectCount();
-    jsonDocument["operation_validation_error"] = operationValidationErrors;
-    jsonDocument["cloud_response_parse_error"] = cloudResponseParseErrors;
-    jsonDocument["hp_json_error"] = hpJsonErrors;
-    jsonDocument["pv_frame_error"] = pvFrameErrors;
-    jsonDocument["preference_validation_error"] =
-      operationController.preferenceValidationErrorCount();
+    bool coPump = operationController.coRelay();
+    bool cwuPump = operationController.cwuRelay();
 
-    JsonObject hp = jsonDocument["HP"].as<JsonObject>();
+    telemetry.updateSnapshot(rtcTime, coPump, cwuPump, pv,
+      operationController.controllerMode(), prefs);
+    telemetry.updateSerialDiagnostics(
+      serialBus.queueOverflowCount(), serialBus.readTimeoutCount(),
+      serialBus.receiveOverflowCount(), pvCrcErrors, hpJsonErrors, pvFrameErrors);
+    telemetry.updateCloudDiagnostics(
+      cloudClient.lastHttpStatus(), cloudClient.requestErrorCount(),
+      cloudClient.webSocketDisconnectCount(), cloudResponseParseErrors);
+    telemetry.updateOperationDiagnostics(operationValidationErrors,
+      operationController.preferenceValidationErrorCount());
 
-    refreshInterval = jsonAsInt(hp["HPS"]) > 0
+    refreshInterval = telemetry.heatPumpRunning()
       ? MILLIS_REFRESH_ACTIVE : MILLIS_REFRESH_IDLE;
 
     // print ALL
-    PrintAll(tft, co_pomp, cwu_pomp, -1, rtcTime, jsonDocument, prefs.workMode, pv, prefs);
+    renderDashboard(tft, coPump, rtcTime, telemetry.document(),
+      operationController.controllerMode(), prefs.workMode, pv, prefs);
 
     cloudPostPending = true;
-    getDataFromHpPv();
+    scheduleNextDeviceRead();
   }
 }
 
-void calculateCOP(JsonObject hp) 
+ControllerMode nextControllerMode(ControllerMode currentMode)
 {
-  if (hp.isNull() || hp["HPS"].isNull() || hp["Tho"].isNull()
-    || hp["Ttarget"].isNull()) return;
-
-  const bool running = jsonAsInt(hp["HPS"]) > 0;
-  const double topTemperature = jsonAsString(hp["Tho"]).toDouble();
-  const double middleTemperature = jsonAsString(hp["Ttarget"]).toDouble();
-  const double electricalEnergyWh = hp["lt_pow"].isNull()
-    ? 0.0 : jsonAsString(hp["lt_pow"]).toDouble();
-  const uint32_t cycleDurationSeconds = hp["lt_hp_on"].isNull()
-    ? 0 : static_cast<uint32_t>(jsonAsString(hp["lt_hp_on"]).toDouble());
-
-  CopCycleEvent event = copEstimator.update(running, topTemperature,
-    middleTemperature, electricalEnergyWh, cycleDurationSeconds);
-
-  if (event == CopCycleEvent::STARTED) {
-    jsonDocument["t_min"] = middleTemperature;
-    jsonDocument["t_max"] = middleTemperature;
-    jsonDocument["cop"].clear();
-    jsonDocument["cop_min"].clear();
-    jsonDocument["cop_max"].clear();
-    jsonDocument["cop_bottom_start"].clear();
-    return;
+  switch (currentMode) {
+    case ControllerMode::OFF: return ControllerMode::CLOUD;
+    case ControllerMode::CLOUD: return ControllerMode::MANUAL_CO;
+    case ControllerMode::MANUAL_CO: return ControllerMode::MANUAL_CWU;
+    case ControllerMode::MANUAL_CWU: return ControllerMode::OFF;
   }
-
-  if (copEstimator.cycleActive()) {
-    jsonDocument["t_max"] = copEstimator.currentMiddleTemperature();
-    return;
-  }
-
-  if (event != CopCycleEvent::COMPLETED) return;
-
-  const CopEstimate &estimate = copEstimator.estimate();
-  jsonDocument["t_min"] = estimate.startMiddleTemperature;
-  jsonDocument["t_max"] = estimate.endMiddleTemperature;
-  jsonDocument["cop_bottom_start"] = estimate.startBottomTemperature;
-
-  if (!estimate.valid) {
-    jsonDocument["cop"].clear();
-    jsonDocument["cop_min"].clear();
-    jsonDocument["cop_max"].clear();
-    return;
-  }
-
-  jsonDocument["cop_min"] = round(estimate.minimum * 100.0) / 100.0;
-  jsonDocument["cop_max"] = round(estimate.maximum * 100.0) / 100.0;
-  jsonDocument["cop"] = round(estimate.estimated * 100.0) / 100.0;
+  return ControllerMode::CLOUD;
 }
 
-void getDataFromHpPv(void) 
+void processControlButton()
+{
+  bool pressed = digitalRead(CONTROL_BUTTON_PIN) == HIGH;
+  unsigned long now = millis();
+
+  if (pressed != buttonCandidateState) {
+    buttonCandidateState = pressed;
+    buttonCandidateSince = now;
+    return;
+  }
+
+  if (buttonCandidateState == buttonStableState
+    || now - buttonCandidateSince < BUTTON_DEBOUNCE_MS) return;
+
+  buttonStableState = buttonCandidateState;
+  if (!buttonStableState) return;
+
+  serialBus.cancelControlCommands();
+  operationController.setControllerMode(
+    nextControllerMode(operationController.controllerMode()));
+  applyControllerOutputs();
+  cloudPostPending = true;
+}
+
+void scheduleNextDeviceRead()
 {
   bool queued;
-  if (readCounter % 10 == 0) {
+  if (scheduledReadCount % 10 == 0) {
     queued = serialBus.enqueue(SERIAL_OPERATION::GET_PV_DATA_1);
     if (queued) {
-      pv.total_power = 0;
-      pv.total_prod = 0;
-      pv.total_prod_today = 0;
-      pv.temperature = 0;
+      pvDataProcessor.reset();
     }
   } else {
     queued = serialBus.enqueue(SERIAL_OPERATION::GET_HP_DATA);
   }
 
-  if (queued) readCounter++;
+  if (queued) scheduledReadCount++;
 }
 
-void collectDataFromSerial()
+void processSerialInput()
 {
-  uint8_t inData[SERIAL_BUFFER];
+  uint8_t inData[SERIAL_BUFFER_SIZE];
   size_t length = serialBus.readFrame(inData, sizeof(inData));
   if (length == 0) return;
 
-  if (length >= 4 && inData[0] == static_cast<uint8_t>(devID) && inData[3] == 0xFF) {
-    sendDataToSerial(static_cast<char>(inData[1]));
+  if (length >= 4 && inData[0] == CONTROLLER_DEVICE_ID && inData[3] == 0xFF) {
+    respondToSerialRequest(static_cast<char>(inData[1]));
     return;
   }
 
@@ -229,7 +206,7 @@ void collectDataFromSerial()
       serialBus.completeRead();
       return;
     }
-    bool valid = collectDataFromPV(inData, length);
+    bool valid = pvDataProcessor.appendFrame(inData, length);
     serialBus.completeRead();
 
     if (!valid) {
@@ -239,9 +216,11 @@ void collectDataFromSerial()
     if (pendingRead == PendingRead::PV_PART_1) {
       serialBus.enqueueFollowUp(SERIAL_OPERATION::GET_PV_DATA_2);
     } else {
-      pv.pv_power = pv.total_power >= HP_FORCE_ON;
-      jsonDocument["pv_power"] = pv.pv_power;
-      jsonDocument["PV"] = pv;
+      if (!pvDataProcessor.complete(pv, HP_FORCE_ON)) {
+        pvFrameErrors++;
+        return;
+      }
+      telemetry.updatePv(pv);
       operationController.updatePv(pv);
       applyControllerOutputs();
     }
@@ -249,45 +228,28 @@ void collectDataFromSerial()
   }
 
   if (pendingRead == PendingRead::HP) {
-    JsonDocument doc;
-    DeserializationError error = deserializeJson(
-      doc, reinterpret_cast<const char *>(inData), length);
     serialBus.completeRead();
-    if (!error) {
-      jsonDocument["HP"] = doc;
-      calculateCOP(jsonDocument["HP"].as<JsonObject>());
-    } else {
+    HeatPumpDataUpdate update;
+    if (!heatPumpDataProcessor.processFrame(inData, length, update)) {
       hpJsonErrors++;
+    } else {
+      telemetry.updateHeatPump(update);
     }
   }
 }
 
-bool collectDataFromPV(const uint8_t *inData, size_t length)
-{
-  constexpr size_t requiredLength = 31 + (PV_DEVICE_COUNT - 1) * 40;
-  if (length < requiredLength) return false;
-
-  for (int i = 0; i < PV_DEVICE_COUNT; i++)
-  {
-    pv.total_power += getPvData(i, inData, 19, 2) / 10;
-    pv.total_prod_today += getPvData(i, inData, 21, 2);
-    pv.total_prod += getPvData(i, inData, 23, 4);
-    pv.temperature = getPvData(i, inData, 27, 2) / 10.0f;
-  }
-  return true;
-}
-
-void sendDataToSerial(char operation)
+void respondToSerialRequest(char operation)
 {
   String data = "";
   switch (operation)
   {
   case 0x01:
-    serializeJsonPretty(jsonDocument, data);
+    serializeJsonPretty(telemetry.document(), data);
     break;
   case 0x02: {
     JsonDocument settingsDocument;
     settingsDocument.set(operationController.preferences());
+    settingsDocument["controller_mode"] = operationController.controllerMode();
     serializeJsonPretty(settingsDocument, data);
     break;
   }
@@ -300,27 +262,18 @@ void sendDataToSerial(char operation)
     serializeJsonPretty(doc, data);
     break;
   }
-  sendSerialText(data);
-}
-
-uint32_t getPvData(uint8_t pvNumber, const uint8_t *data,
-  uint8_t startByte, uint8_t byteCount)
-{
-  uint32_t ret = 0;
-  for (int i = 0; i < byteCount; i++) {
-    ret = (ret << 8) | data[startByte + i + pvNumber * 40];
-  }
-
-  return ret;
+  writeSerialResponse(data);
 }
 
 // TODO(server): Scheduler must perform the MANUAL -> AUTO transition.
 // This firmware applies only work_mode changes received from the server.
-void operationExecute(JsonDocument ddd) {
-  JsonObject doc = ddd.as<JsonObject>();
-  if (doc.isNull() || doc.size() == 0) return;
+void applyServerOperation(JsonDocument operationDocument) {
+  if (operationController.controllerMode() != ControllerMode::CLOUD) return;
 
-  OperationParseResult parsed = parseServerOperation(doc);
+  JsonObject operation = operationDocument.as<JsonObject>();
+  if (operation.isNull() || operation.size() == 0) return;
+
+  OperationParseResult parsed = parseServerOperation(operation);
   operationValidationErrors += parsed.invalidValues;
   operationController.applyServerPatch(parsed.state);
   applyControllerOutputs();
@@ -333,39 +286,39 @@ void applyControllerOutputs()
   bool relayChanged = operationController.takeRelayChanged();
 
   if (relayChanged) {
-    digitalWriteA(tft, RELAY_HP_CO, operationController.coRelay());
-    digitalWriteA(tft, RELAY_HP_CWU, operationController.cwuRelay());
+    writeRelayOutput(tft, RELAY_HP_CO_PIN, operationController.coRelay());
+    writeRelayOutput(tft, RELAY_HP_CWU_PIN, operationController.cwuRelay());
   }
 
-  if (modeChanged || relayChanged) PrintMode(tft, prefs.workMode);
+  if (modeChanged || relayChanged) displayControllerMode(tft,
+    operationController.controllerMode(), prefs.workMode);
 
-  jsonDocument["co_pomp"] = operationController.coRelay();
-  jsonDocument["cwu_pomp"] = operationController.cwuRelay();
-  jsonDocument["work_mode"] = prefs.workMode;
+  telemetry.updateControllerState(operationController.coRelay(),
+    operationController.cwuRelay(), operationController.controllerMode(), prefs);
 }
 
 
-void putHpDataToCloud(void) {
-  if (jsonDocument.isNull() || jsonDocument["HP"].isNull()) {
+void postTelemetryToCloud() {
+  if (telemetry.document().isNull() || telemetry.document()["HP"].isNull()) {
     return;
   }
   
-  String response = cloudClient.post("hp/add", jsonDocument);
+  String response = cloudClient.post("hp/add", telemetry.document());
   if (response == "" ) {
     return;
   } 
 
-  JsonDocument ddd;
-  DeserializationError error = deserializeJson(ddd, response);
+  JsonDocument responseDocument;
+  DeserializationError error = deserializeJson(responseDocument, response);
   if (error) {
     cloudResponseParseErrors++;
     return;
   }  
   
-  JsonObject operation = ddd["operation"].as<JsonObject>();
+  JsonObject operation = responseDocument["operation"].as<JsonObject>();
   if (!operation.isNull() && operation.size() > 0) {
     JsonDocument operationDocument;
     operationDocument.set(operation);
-    operationExecute(operationDocument);
+    applyServerOperation(operationDocument);
   }
 }

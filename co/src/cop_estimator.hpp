@@ -30,7 +30,7 @@ public:
 
 private:
   void startCycle(double topTemperature, double middleTemperature,
-    double electricalEnergyWh, uint32_t cycleDurationSeconds);
+    double electricalEnergyWh);
   void completeCycle(double topTemperature, double middleTemperature,
     double electricalEnergyWh);
 

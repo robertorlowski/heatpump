@@ -26,8 +26,7 @@ CopCycleEvent CopEstimator::update(bool heatPumpRunning,
   if (heatPumpRunning) {
     const bool started = !wasRunning_ || !cycleActive_;
     if (started) {
-      startCycle(topTemperature, middleTemperature, electricalEnergyWh,
-        cycleDurationSeconds);
+      startCycle(topTemperature, middleTemperature, electricalEnergyWh);
     } else {
       endTopTemperature_ = topTemperature;
       endMiddleTemperature_ = middleTemperature;
@@ -51,7 +50,7 @@ CopCycleEvent CopEstimator::update(bool heatPumpRunning,
 }
 
 void CopEstimator::startCycle(double topTemperature, double middleTemperature,
-  double electricalEnergyWh, uint32_t cycleDurationSeconds)
+  double electricalEnergyWh)
 {
   cycleActive_ = true;
   startTopTemperature_ = topTemperature;
@@ -62,9 +61,6 @@ void CopEstimator::startCycle(double topTemperature, double middleTemperature,
   electricalEnergyWh_ = std::max(0.0, electricalEnergyWh);
   estimate_ = {};
 
-  // If the first observation is already outside the startup window, THO is
-  // still the only available approximation of the initial bottom temperature.
-  (void)cycleDurationSeconds;
 }
 
 void CopEstimator::completeCycle(double topTemperature,

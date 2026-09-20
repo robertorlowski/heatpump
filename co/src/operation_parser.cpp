@@ -139,12 +139,12 @@ OperationParseResult parseServerOperation(JsonObjectConst document)
     result.invalidValues);
   readNumber(document, "cwu_max", result.state.cwuMax, 1, 50, true,
     result.invalidValues);
-  readBoolean(document, "co_pomp", result.state.coPomp, result.invalidValues);
+  readBoolean(document, "co_pomp", result.state.coPump, result.invalidValues);
   readBoolean(document, "sump_heater", result.state.sumpHeater,
     result.invalidValues);
-  readBoolean(document, "cold_pomp", result.state.coldPomp,
+  readBoolean(document, "cold_pomp", result.state.coldPump,
     result.invalidValues);
-  readBoolean(document, "hot_pomp", result.state.hotPomp,
+  readBoolean(document, "hot_pomp", result.state.hotPump,
     result.invalidValues);
   readBoolean(document, "force", result.state.force, result.invalidValues);
   readNumber(document, "working_watt", result.state.workingWatt, 0, 25599,

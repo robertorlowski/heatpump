@@ -21,6 +21,7 @@ public:
   bool enqueue(SERIAL_OPERATION operation, double value = 0.0) override;
   bool enqueuePriority(SERIAL_OPERATION operation, double value = 0.0) override;
   bool enqueueFollowUp(SERIAL_OPERATION operation, double value = 0.0);
+  void cancelControlCommands();
 
   size_t readFrame(uint8_t *buffer, size_t capacity);
   bool validateModbusFrame(const uint8_t *buffer, size_t length) const;
@@ -72,4 +73,5 @@ private:
   int commandKey(SERIAL_OPERATION operation) const;
   void writeCommand(const Command &command);
   PendingRead readTypeFor(SERIAL_OPERATION operation) const;
+  bool isReadOperation(SERIAL_OPERATION operation) const;
 };

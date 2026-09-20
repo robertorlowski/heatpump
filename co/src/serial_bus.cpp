@@ -1,7 +1,7 @@
 #include <serial_bus.hpp>
 
 #include <FastCRC.h>
-#include <env.h>
+#include <hardware_config.hpp>
 
 SerialBus::SerialBus(HardwareSerial &serial) : serial(serial)
 {
@@ -26,6 +26,17 @@ bool SerialBus::enqueuePriority(SERIAL_OPERATION operation, double value)
 bool SerialBus::enqueueFollowUp(SERIAL_OPERATION operation, double value)
 {
   return enqueueCommand({operation, value}, QueueClass::FOLLOW_UP);
+}
+
+void SerialBus::cancelControlCommands()
+{
+  for (size_t index = 0; index < queueCount;) {
+    if (isReadOperation(queue[index].operation)) {
+      index++;
+    } else {
+      removeAt(index);
+    }
+  }
 }
 
 bool SerialBus::enqueueCommand(const Command &command, QueueClass queueClass)
@@ -83,10 +94,10 @@ int SerialBus::commandKey(SERIAL_OPERATION operation) const
     case SET_HP_CO_OFF: return 101;
     case SET_SUMP_HEATER_ON:
     case SET_SUMP_HEATER_OFF: return 103;
-    case SET_COLD_POMP_ON:
-    case SET_COLD_POMP_OFF: return 104;
-    case SET_HOT_POMP_ON:
-    case SET_HOT_POMP_OFF: return 105;
+    case SET_COLD_PUMP_ON:
+    case SET_COLD_PUMP_OFF: return 104;
+    case SET_HOT_PUMP_ON:
+    case SET_HOT_PUMP_OFF: return 105;
     default: return 1000 + static_cast<int>(operation);
   }
 }
@@ -214,6 +225,13 @@ PendingRead SerialBus::readTypeFor(SERIAL_OPERATION operation) const
   }
 }
 
+bool SerialBus::isReadOperation(SERIAL_OPERATION operation) const
+{
+  return operation == SERIAL_OPERATION::GET_HP_DATA
+    || operation == SERIAL_OPERATION::GET_PV_DATA_1
+    || operation == SERIAL_OPERATION::GET_PV_DATA_2;
+}
+
 void SerialBus::writeCommand(const Command &command)
 {
   uint8_t buffer[10]{};
@@ -256,15 +274,15 @@ void SerialBus::writeCommand(const Command &command)
       buffer[0] = 0x41; buffer[1] = 0x0B;
       buffer[2] = command.operation == SET_SUMP_HEATER_ON; buffer[4] = 0xFF;
       break;
-    case SET_COLD_POMP_ON:
-    case SET_COLD_POMP_OFF:
+    case SET_COLD_PUMP_ON:
+    case SET_COLD_PUMP_OFF:
       buffer[0] = 0x41; buffer[1] = 0x0A;
-      buffer[2] = command.operation == SET_COLD_POMP_ON; buffer[4] = 0xFF;
+      buffer[2] = command.operation == SET_COLD_PUMP_ON; buffer[4] = 0xFF;
       break;
-    case SET_HOT_POMP_ON:
-    case SET_HOT_POMP_OFF:
+    case SET_HOT_PUMP_ON:
+    case SET_HOT_PUMP_OFF:
       buffer[0] = 0x41; buffer[1] = 0x09;
-      buffer[2] = command.operation == SET_HOT_POMP_ON; buffer[4] = 0xFF;
+      buffer[2] = command.operation == SET_HOT_PUMP_ON; buffer[4] = 0xFF;
       break;
     case SET_T_SETPOINT_CO:
     case SET_T_DELTA_CO:

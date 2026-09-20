@@ -14,10 +14,10 @@ struct ServerOperationState {
   ServerValue<double> coMax;
   ServerValue<double> cwuMin;
   ServerValue<double> cwuMax;
-  ServerValue<bool> coPomp;
+  ServerValue<bool> coPump;
   ServerValue<bool> sumpHeater;
-  ServerValue<bool> coldPomp;
-  ServerValue<bool> hotPomp;
+  ServerValue<bool> coldPump;
+  ServerValue<bool> hotPump;
   ServerValue<bool> force;
   ServerValue<double> workingWatt;
   ServerValue<double> eevMaxPulseOpen;
@@ -31,10 +31,10 @@ inline bool hasServerOperationValues(const ServerOperationState &state)
     || state.coMax.present
     || state.cwuMin.present
     || state.cwuMax.present
-    || state.coPomp.present
+    || state.coPump.present
     || state.sumpHeater.present
-    || state.coldPomp.present
-    || state.hotPomp.present
+    || state.coldPump.present
+    || state.hotPump.present
     || state.force.present
     || state.workingWatt.present
     || state.eevMaxPulseOpen.present
@@ -55,10 +55,10 @@ inline void mergeServerOperation(
   mergeServerValue(target.coMax, patch.coMax);
   mergeServerValue(target.cwuMin, patch.cwuMin);
   mergeServerValue(target.cwuMax, patch.cwuMax);
-  mergeServerValue(target.coPomp, patch.coPomp);
+  mergeServerValue(target.coPump, patch.coPump);
   mergeServerValue(target.sumpHeater, patch.sumpHeater);
-  mergeServerValue(target.coldPomp, patch.coldPomp);
-  mergeServerValue(target.hotPomp, patch.hotPomp);
+  mergeServerValue(target.coldPump, patch.coldPump);
+  mergeServerValue(target.hotPump, patch.hotPump);
   mergeServerValue(target.force, patch.force);
   mergeServerValue(target.workingWatt, patch.workingWatt);
   mergeServerValue(target.eevMaxPulseOpen, patch.eevMaxPulseOpen);
