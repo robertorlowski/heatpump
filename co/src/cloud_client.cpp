@@ -1,10 +1,26 @@
 #include <cloud_client.hpp>
 
 #include <WiFi.h>
+#include "secrets.h"
 
 namespace {
 constexpr const char *CLOUD_HOST = "chpc-web.onrender.com";
 constexpr const char *CLOUD_BASE_URL = "https://chpc-web.onrender.com/api/";
+
+#ifndef CLOUD_ROOT_ID
+#error "CLOUD_ROOT_ID must be defined in secrets.h"
+#endif
+
+String deviceQuery()
+{
+  return String("rootId=") + CLOUD_ROOT_ID;
+}
+
+String cloudUrl(const String &normalizedPath)
+{
+  const char separator = normalizedPath.indexOf('?') >= 0 ? '&' : '?';
+  return String(CLOUD_BASE_URL) + normalizedPath + separator + deviceQuery();
+}
 }
 
 CloudClient *CloudClient::instance = nullptr;
@@ -12,7 +28,8 @@ CloudClient *CloudClient::instance = nullptr;
 void CloudClient::begin()
 {
   instance = this;
-  webSocket.beginSSL(CLOUD_HOST, 443, "/ws");
+  String webSocketPath = String("/ws?") + deviceQuery();
+  webSocket.beginSSL(CLOUD_HOST, 443, webSocketPath.c_str());
   webSocket.onEvent(handleWebSocketEvent);
   webSocket.setReconnectInterval(10000);
 }
@@ -48,7 +65,7 @@ String CloudClient::post(const String &path, const JsonDocument &data)
   String normalizedPath = path;
   while (normalizedPath.startsWith("/")) normalizedPath.remove(0, 1);
 
-  if (!http.begin(String(CLOUD_BASE_URL) + normalizedPath)) {
+  if (!http.begin(cloudUrl(normalizedPath))) {
     httpStatus = 0;
     requestErrors++;
     return "";
@@ -96,9 +113,15 @@ void CloudClient::handleWebSocketEvent(
       instance->webSocket.sendTXT("ESP32");
       break;
     case WStype_TEXT:
-      if (length == 9 && memcmp(payload, "operation", 9) == 0)
+    {
+      JsonDocument message;
+      DeserializationError error = deserializeJson(message, payload, length);
+      if (!error
+        && message["type"] == "operation"
+        && message["rootId"] == CLOUD_ROOT_ID)
         instance->operationRequested = true;
       break;
+    }
     case WStype_DISCONNECTED:
       instance->webSocketDisconnects++;
       break;
