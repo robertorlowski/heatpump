@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Preferences.h>
 #include <cloud_client.hpp>
 #include <device_io.hpp>
 #include <hardware_config.hpp>
@@ -10,6 +11,8 @@
 #include <serial_bus.hpp>
 #include <telemetry.hpp>
 
+#include "secrets.h"
+
 constexpr int64_t HP_FORCE_ON = 2000;
 constexpr unsigned long MILLIS_REFRESH_ACTIVE = 10000;
 constexpr unsigned long MILLIS_REFRESH_IDLE = 30000;
@@ -17,6 +20,7 @@ unsigned long refreshInterval = MILLIS_REFRESH_IDLE;
 constexpr unsigned long TIME_SYNC_INTERVAL = 6UL * 60UL * 60UL * 1000UL;
 constexpr unsigned long TIME_SYNC_RETRY_INTERVAL = 5UL * 60UL * 1000UL;
 constexpr unsigned long BUTTON_DEBOUNCE_MS = 50;
+constexpr unsigned long MODE_CHANGE_DELAY_MS = 5000;
 
 
 
@@ -32,6 +36,7 @@ OperationController operationController(serialBus, HP_FORCE_ON);
 CloudClient cloudClient;
 HeatPumpDataProcessor heatPumpDataProcessor;
 PvDataProcessor pvDataProcessor;
+Preferences devicePreferences;
 
 // temporary variables
 unsigned long lastRefreshAt = -1;
@@ -47,6 +52,9 @@ bool cloudPostPending = false;
 bool buttonStableState = false;
 bool buttonCandidateState = false;
 unsigned long buttonCandidateSince = 0;
+bool pendingControllerMode = false;
+ControllerMode requestedControllerMode = ControllerMode::CLOUD;
+unsigned long requestedControllerModeAt = 0;
 
 // global functions
 void respondToSerialRequest(char operation);
@@ -56,7 +64,10 @@ void applyServerOperation(JsonDocument operationDocument);
 void scheduleNextDeviceRead();
 void applyControllerOutputs(void);
 void processControlButton();
+void applyPendingControllerMode();
 ControllerMode nextControllerMode(ControllerMode currentMode);
+DeviceSettings loadDeviceSettings();
+void saveDeviceSettings(const DeviceSettings &settings);
 
 // main
 void setup()
@@ -75,6 +86,9 @@ void setup()
   buttonStableState = digitalRead(CONTROL_BUTTON_PIN) == HIGH;
   buttonCandidateState = buttonStableState;
   bool timeSynchronized = initializeDevice(rtc, tft);
+  DeviceSettings settings = loadDeviceSettings();
+  operationController.setControllerMode(settings.controllerMode);
+  applyControllerOutputs();
   lastTimeSyncAt = millis();
   timeSyncInterval = timeSynchronized
     ? TIME_SYNC_INTERVAL : TIME_SYNC_RETRY_INTERVAL;
@@ -85,6 +99,7 @@ void setup()
 void loop()
 {
   processControlButton();
+  applyPendingControllerMode();
   serialBus.tick();
   operationController.tick();
   processSerialInput();
@@ -110,7 +125,7 @@ void loop()
     lastRefreshAt = millis();
   
     rtcTime = rtc.now(); // Get current time from RTC
-    const HpPreferences &prefs = operationController.preferences();
+    const DeviceSettings &prefs = operationController.preferences();
     bool coPump = operationController.coRelay();
     bool cwuPump = operationController.cwuRelay();
 
@@ -165,11 +180,55 @@ void processControlButton()
   buttonStableState = buttonCandidateState;
   if (!buttonStableState) return;
 
+  ControllerMode baseMode = pendingControllerMode
+    ? requestedControllerMode : operationController.controllerMode();
+  requestedControllerMode = nextControllerMode(baseMode);
+  requestedControllerModeAt = now;
+  pendingControllerMode = true;
+}
+
+void applyPendingControllerMode()
+{
+  if (!pendingControllerMode
+    || millis() - requestedControllerModeAt < MODE_CHANGE_DELAY_MS) return;
+
+  pendingControllerMode = false;
   serialBus.cancelControlCommands();
-  operationController.setControllerMode(
-    nextControllerMode(operationController.controllerMode()));
+  operationController.setControllerMode(requestedControllerMode);
+  DeviceSettings settings = loadDeviceSettings();
+  settings.controllerMode = requestedControllerMode;
+  saveDeviceSettings(settings);
   applyControllerOutputs();
   cloudPostPending = true;
+}
+
+DeviceSettings loadDeviceSettings()
+{
+  DeviceSettings defaults;
+  strlcpy(defaults.wifiSsid, WIFI_SSID, sizeof(defaults.wifiSsid));
+  strlcpy(defaults.wifiPassword, WIFI_PASSWORD, sizeof(defaults.wifiPassword));
+  strlcpy(defaults.rootId, CLOUD_ROOT_ID, sizeof(defaults.rootId));
+
+  devicePreferences.begin("hp", false);
+  DeviceSettings settings = defaults;
+  if (devicePreferences.getBytesLength("settings") == sizeof(settings)) {
+    devicePreferences.getBytes("settings", &settings, sizeof(settings));
+  }
+  devicePreferences.end();
+
+  if (settings.controllerMode > ControllerMode::MANUAL_CWU) {
+    settings.controllerMode = ControllerMode::CLOUD;
+  }
+  return settings;
+}
+
+void saveDeviceSettings(const DeviceSettings &settings)
+{
+  DeviceSettings persisted = settings;
+  persisted.workMode = WORK_MODE::OFF;
+  devicePreferences.begin("hp", false);
+  devicePreferences.putBytes("settings", &persisted, sizeof(persisted));
+  devicePreferences.end();
 }
 
 void scheduleNextDeviceRead()
@@ -281,7 +340,7 @@ void applyServerOperation(JsonDocument operationDocument) {
 
 void applyControllerOutputs()
 {
-  const HpPreferences &prefs = operationController.preferences();
+    const DeviceSettings &prefs = operationController.preferences();
   bool modeChanged = operationController.takeModeChanged();
   bool relayChanged = operationController.takeRelayChanged();
 

@@ -13,7 +13,7 @@ public:
   void tick();
 
   ControllerMode controllerMode() const;
-  const HpPreferences &preferences() const;
+  const DeviceSettings &preferences() const;
   const ServerOperationState &serverState() const;
   bool coRelay() const;
   bool cwuRelay() const;
@@ -24,7 +24,7 @@ public:
 private:
   CommandSink &commands;
   long pvForceThreshold;
-  HpPreferences prefs;
+  DeviceSettings prefs;
   ServerOperationState desired;
   ServerOperationState lastScheduled;
   ServerValue<bool> lastHpCo;
@@ -37,6 +37,7 @@ private:
   bool relayChanged = false;
   bool modeChanged = false;
   bool retryPending = false;
+  bool cloudStateReady = false;
   uint32_t preferenceValidationErrors = 0;
 
   void reconcile();

@@ -177,7 +177,7 @@ void writeRelayOutput(Adafruit_ST7735 &display, uint8_t pin, uint8_t value)
 void renderDashboard(Adafruit_ST7735 &display, bool coOn,
   const DateTime &rtcTime, const JsonDocument &telemetry,
   ControllerMode controllerMode, WORK_MODE workMode, const PV &pv,
-  const HpPreferences &preferences)
+  const DeviceSettings &settings)
 {
   display.fillScreen(ST77XX_BLACK);
   display.setTextSize(1);
@@ -237,9 +237,9 @@ void renderDashboard(Adafruit_ST7735 &display, bool coOn,
   displayRow(display, row++, 0, "   T.HP:",
     jsonValueToString(hp["Tmin"]) + "/" + jsonValueToString(hp["Tmax"]));
   displayRow(display, row++, 0, "   T.CO:",
-    String(preferences.coMin, 0) + "/" + String(preferences.coMax, 0));
+    String(settings.coMin, 0) + "/" + String(settings.coMax, 0));
   displayRow(display, row++, 0, "  T.CWU:",
-    String(preferences.cwuMin, 0) + "/" + String(preferences.cwuMax, 0));
+    String(settings.cwuMin, 0) + "/" + String(settings.cwuMax, 0));
 
   displayRow(display, row, 0, "T.be:", jsonValueToString(hp["Tbe"]));
   displayRow(display, row++, 1, "T.ae:", jsonValueToString(hp["Tae"]));

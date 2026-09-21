@@ -12,18 +12,18 @@ Telemetry::Telemetry()
 
 void Telemetry::updateSnapshot(const DateTime &time, bool coPump, bool cwuPump,
   const PV &pv, ControllerMode controllerMode,
-  const HpPreferences &preferences)
+  const DeviceSettings &settings)
 {
   data["time"] = time;
   data["co_pomp"] = coPump;
   data["cwu_pomp"] = cwuPump;
   data["pv_power"] = pv.pv_power;
   data["controller_mode"] = controllerMode;
-  data["work_mode"] = preferences.workMode;
-  data["co_min"] = preferences.coMin;
-  data["co_max"] = preferences.coMax;
-  data["cwu_min"] = preferences.cwuMin;
-  data["cwu_max"] = preferences.cwuMax;
+  data["work_mode"] = settings.workMode;
+  data["co_min"] = settings.coMin;
+  data["co_max"] = settings.coMax;
+  data["cwu_min"] = settings.cwuMin;
+  data["cwu_max"] = settings.cwuMax;
 }
 
 void Telemetry::updateSerialDiagnostics(uint32_t queueOverflow,
@@ -101,12 +101,12 @@ void Telemetry::updateHeatPump(const HeatPumpDataUpdate &update)
 }
 
 void Telemetry::updateControllerState(bool coPump, bool cwuPump,
-  ControllerMode controllerMode, const HpPreferences &preferences)
+  ControllerMode controllerMode, const DeviceSettings &settings)
 {
   data["co_pomp"] = coPump;
   data["cwu_pomp"] = cwuPump;
   data["controller_mode"] = controllerMode;
-  data["work_mode"] = preferences.workMode;
+  data["work_mode"] = settings.workMode;
 }
 
 bool Telemetry::heatPumpRunning() const

@@ -12,7 +12,7 @@ public:
 
   void updateSnapshot(const DateTime &time, bool coPump, bool cwuPump,
     const PV &pv, ControllerMode controllerMode,
-    const HpPreferences &preferences);
+    const DeviceSettings &settings);
   void updateSerialDiagnostics(uint32_t queueOverflow, uint32_t readTimeout,
     uint32_t receiveOverflow, uint32_t pvCrcError, uint32_t hpJsonError,
     uint32_t pvFrameError);
@@ -23,7 +23,7 @@ public:
   void updatePv(const PV &pv);
   void updateHeatPump(const HeatPumpDataUpdate &update);
   void updateControllerState(bool coPump, bool cwuPump,
-    ControllerMode controllerMode, const HpPreferences &preferences);
+    ControllerMode controllerMode, const DeviceSettings &settings);
 
   bool heatPumpRunning() const;
   const JsonDocument &document() const;

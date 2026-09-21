@@ -92,8 +92,8 @@ struct Converter<ControllerMode> {
 };
 
 template <>
-struct Converter<HpPreferences> {
-  static bool toJson(const HpPreferences &source, JsonVariant destination)
+struct Converter<DeviceSettings> {
+  static bool toJson(const DeviceSettings &source, JsonVariant destination)
   {
     destination["work_mode"] = source.workMode;
     destination["co_min"] = source.coMin;

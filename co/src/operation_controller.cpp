@@ -12,7 +12,7 @@ void OperationController::applyServerPatch(const ServerOperationState &patch)
 
   ServerOperationState accepted = patch;
 
-  HpPreferences nextPreferences = prefs;
+  DeviceSettings nextPreferences = prefs;
   if (accepted.workMode.present) nextPreferences.workMode = accepted.workMode.value;
   if (accepted.coMin.present) nextPreferences.coMin = accepted.coMin.value;
   if (accepted.coMax.present) nextPreferences.coMax = accepted.coMax.value;
@@ -42,6 +42,7 @@ void OperationController::applyServerPatch(const ServerOperationState &patch)
 
   mergeServerOperation(desired, accepted);
   prefs = nextPreferences;
+  cloudStateReady = true;
 
   if (serverModeChanged) {
     modeChanged = true;
@@ -67,15 +68,15 @@ void OperationController::setControllerMode(ControllerMode mode)
 
     case ControllerMode::CLOUD:
       resetScheduledState();
-      reconcile();
+      if (cloudStateReady) reconcile();
       break;
 
     case ControllerMode::MANUAL_CO:
-      setRelayState(true, false);
+      setRelayState(true, true);
       break;
 
     case ControllerMode::MANUAL_CWU:
-      setRelayState(false, true);
+      setRelayState(false, false);
       break;
   }
 }
@@ -84,13 +85,13 @@ void OperationController::updatePv(const PV &newPv)
 {
   pv = newPv;
   if (localMode == ControllerMode::CLOUD
-    && prefs.workMode == WORK_MODE::AUTO_PV) reconcile();
+    && cloudStateReady && prefs.workMode == WORK_MODE::AUTO_PV) reconcile();
 }
 
 void OperationController::tick()
 {
   if (!retryPending) return;
-  if (localMode == ControllerMode::CLOUD) reconcile();
+  if (localMode == ControllerMode::CLOUD && cloudStateReady) reconcile();
   if (localMode == ControllerMode::OFF) {
     retryPending = false;
     scheduleOffSequence();
@@ -102,7 +103,7 @@ ControllerMode OperationController::controllerMode() const
   return localMode;
 }
 
-const HpPreferences &OperationController::preferences() const
+const DeviceSettings &OperationController::preferences() const
 {
   return prefs;
 }
@@ -219,7 +220,7 @@ void OperationController::updateRelayState(WORK_MODE mode)
 
 void OperationController::reconcile()
 {
-  if (localMode != ControllerMode::CLOUD) return;
+  if (localMode != ControllerMode::CLOUD || !cloudStateReady) return;
   retryPending = false;
   WORK_MODE mode = prefs.workMode;
   bool coMode = isCoMode(mode);

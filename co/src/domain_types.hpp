@@ -46,10 +46,14 @@ enum class ControllerMode : uint8_t {
   MANUAL_CWU,
 };
 
-struct HpPreferences {
+struct DeviceSettings {
   WORK_MODE workMode = WORK_MODE::OFF;
   double coMin = 35.0;
   double coMax = 45.0;
   double cwuMin = 40.0;
   double cwuMax = 47.0;
+  ControllerMode controllerMode = ControllerMode::CLOUD;
+  char wifiSsid[64] = {};
+  char wifiPassword[64] = {};
+  char rootId[64] = {};
 };
