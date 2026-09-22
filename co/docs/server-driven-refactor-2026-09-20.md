@@ -140,6 +140,10 @@ serwera.
 | `CWU` | ON | CWU | wyłączone | z serwera |
 | `OFF` | OFF | nie jest wysyłany | wyłączone | zawsze OFF |
 
+Oba lokalne przekaźniki są sterowane wspólnie i zawsze mają ten sam stan.
+Kolumna „Lokalne przekaźniki” opisuje więc stan wspólny dla `RELAY_HP_CO_PIN`
+i `RELAY_HP_CWU_PIN`.
+
 Lokalne harmonogramy CO/CWU zostały usunięte. Przycisk na pinie 5 przełącza
 niezależny tryb sterownika:
 `OFF -> CLOUD -> MANUAL_CO -> MANUAL_CWU -> OFF`.
@@ -147,12 +151,11 @@ niezależny tryb sterownika:
 - `OFF` lokalnie wyłącza pompę i przekaźniki, ale nie zmienia `work_mode`
   otrzymanego z chmury.
 - `CLOUD` stosuje sterowanie i ustawienia z serwera.
-- `MANUAL_CO` nie wysyła komend sterujących do pompy, włącza lokalny
-  przekaźnik CO, wyłącza przekaźnik CWU i pozostawia aktywne odczyty oraz
-  telemetrię.
-- `MANUAL_CWU` nie wysyła komend sterujących do pompy, wyłącza lokalny
-  przekaźnik CO, włącza przekaźnik CWU i pozostawia aktywne odczyty oraz
-  telemetrię.
+- `MANUAL_CO` nie wysyła komend sterujących do pompy, załącza oba lokalne
+  przekaźniki i pozostawia aktywne odczyty oraz telemetrię.
+- `MANUAL_CWU` nie wysyła komend sterujących do pompy, wyłącza oba lokalne
+  przekaźniki i pozostawia aktywne odczyty oraz telemetrię. Od trybu `OFF`
+  różni się tym, że nie wysyła do pompy sekwencji bezpieczeństwa.
 
 Pole `controller_mode` w telemetrii odróżnia lokalny stan sterownika od
 serwerowego `work_mode`.
