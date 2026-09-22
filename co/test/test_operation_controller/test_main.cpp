@@ -1,4 +1,6 @@
+#ifdef ARDUINO
 #include <Arduino.h>
+#endif
 #include <unity.h>
 
 #include <cop_estimator.hpp>
@@ -213,8 +215,9 @@ void testManualModeDoesNotSendOrApplyCloudCommands()
 
   TEST_ASSERT_EQUAL_UINT32(0, sink.count);
   TEST_ASSERT_EQUAL_INT(WORK_MODE::AUTO, controller.preferences().workMode);
+  // Both local relays carry the same state, so MANUAL_CO enables the pair.
   TEST_ASSERT_TRUE(controller.coRelay());
-  TEST_ASSERT_FALSE(controller.cwuRelay());
+  TEST_ASSERT_TRUE(controller.cwuRelay());
 }
 
 void testManualCwuDisablesRelaysWithoutSendingCommands()
@@ -227,8 +230,9 @@ void testManualCwuDisablesRelaysWithoutSendingCommands()
   controller.setControllerMode(ControllerMode::MANUAL_CWU);
 
   TEST_ASSERT_EQUAL_UINT32(0, sink.count);
+  // MANUAL_CWU drops the pair; unlike OFF it sends no safety sequence.
   TEST_ASSERT_FALSE(controller.coRelay());
-  TEST_ASSERT_TRUE(controller.cwuRelay());
+  TEST_ASSERT_FALSE(controller.cwuRelay());
 }
 
 void testInvalidTemperatureRangeIsIgnored()
@@ -383,9 +387,8 @@ void testCopBottomEstimateUsesOnlyStartupWindow()
 }
 }
 
-void setup()
+int runAllTests()
 {
-  delay(2000);
   UNITY_BEGIN();
   RUN_TEST(testRepeatedOperationDoesNotScheduleCommandsAgain);
   RUN_TEST(testEmptyPatchDoesNotApplyDefaults);
@@ -404,9 +407,23 @@ void setup()
   RUN_TEST(testOperationParserRejectsInvalidValues);
   RUN_TEST(testCopIsCompletedOnlyAfterHeatPumpStops);
   RUN_TEST(testCopBottomEstimateUsesOnlyStartupWindow);
-  UNITY_END();
+  return UNITY_END();
+}
+
+#ifdef ARDUINO
+void setup()
+{
+  // The runner needs the serial link up before the first report.
+  delay(2000);
+  runAllTests();
 }
 
 void loop()
 {
 }
+#else
+int main()
+{
+  return runAllTests();
+}
+#endif

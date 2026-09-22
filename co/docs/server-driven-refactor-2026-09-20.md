@@ -301,15 +301,42 @@ Dodano test `test/test_operation_controller/test_main.cpp`, który pokrywa:
 12. obliczenie zakresu COP dopiero po zakończeniu cyklu,
 13. ograniczenie estymacji temperatury dołu do pierwszych 60 sekund cyklu.
 
-Pełny testowy firmware dla ESP32 kompiluje się poleceniem:
+Drugi zestaw, `test/test_pv_data_processor/test_main.cpp`, pokrywa parser
+odpowiedzi falownika:
+
+14. złożenie ramki w panele i sumy wraz z numerem seryjnym oraz portem,
+15. wyprowadzenie liczby rekordów z pola licznika bajtów odpowiedzi,
+16. odczyt ujemnej temperatury jako wartości ze znakiem,
+17. odrzucenie ramek uszkodzonych, zbyt krótkich i o niespójnym liczniku,
+18. wymaganie kompletu odpowiedzi przed wystawieniem wyniku,
+19. próg mocy przełączający `pv_power`,
+20. czyszczenie stanu przez `reset()`.
+
+Testy uruchamiają się na komputerze, bez płytki:
 
 ```text
-pio test -e esp32dev -f test_operation_controller --without-uploading --without-testing
+pio test -e native
 ```
 
-Polecenie dla ESP32 nie wykonuje asercji — ich uruchomienie wymaga wgrania
-testowego firmware na płytkę. Produkcyjny firmware jest weryfikowany
-poleceniem `pio run`.
+Środowisko `native` buduje wyłącznie pliki testowe; moduły
+`operation_controller`, `operation_parser`, `cop_estimator` i
+`pv_data_processor` nie zależą od Arduino, więc kompilują się na hoście.
+Wymaga kompilatora `g++` w `PATH`. Wpis `default_envs = esp32dev` sprawia, że
+`pio run` nadal buduje sam firmware.
+
+Ten sam kod testowy kompiluje się również dla płytki:
+
+```text
+pio test -e esp32dev --without-uploading --without-testing
+```
+
+Wariant dla ESP32 wykonuje asercje dopiero po wgraniu na płytkę, a raport idzie
+przez `Serial`, czyli tę samą magistralę co pompa. Produkcyjny firmware jest
+weryfikowany poleceniem `pio run`.
+
+Testy parsera PV kodują założony układ rekordu DTU. Chronią przed regresją i
+dokumentują interpretację, ale nie zastępują weryfikacji na prawdziwym
+falowniku.
 
 ## 11. Świadomie pozostawione kwestie
 
