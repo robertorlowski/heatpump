@@ -1,7 +1,6 @@
 #include <serial_bus.hpp>
 
-#include <FastCRC.h>
-#include <hardware_config.hpp>
+#include <modbus_frame.hpp>
 
 SerialBus::SerialBus(HardwareSerial &serial) : serial(serial)
 {
@@ -168,14 +167,7 @@ size_t SerialBus::readFrame(uint8_t *buffer, size_t capacity)
 
 bool SerialBus::validateModbusFrame(const uint8_t *buffer, size_t length) const
 {
-  if (length < 4) return false;
-  FastCRC16 crc16;
-  uint16_t crc = crc16.modbus(buffer, length - 2);
-  bool highByteFirst = buffer[length - 2] == highByte(crc)
-    && buffer[length - 1] == lowByte(crc);
-  bool lowByteFirst = buffer[length - 2] == lowByte(crc)
-    && buffer[length - 1] == highByte(crc);
-  return highByteFirst || lowByteFirst;
+  return modbusCrcMatches(buffer, length);
 }
 
 PendingRead SerialBus::pendingRead() const
@@ -234,87 +226,10 @@ bool SerialBus::isReadOperation(SERIAL_OPERATION operation) const
 
 void SerialBus::writeCommand(const Command &command)
 {
-  uint8_t buffer[10]{};
-  size_t length = 5;
-
-  switch (command.operation) {
-    case GET_HP_DATA:
-      buffer[0] = 0x41; buffer[1] = 0x01; buffer[4] = 0xFF;
-      break;
-    case GET_PV_DATA_1:
-    case GET_PV_DATA_2: {
-      FastCRC16 crc16;
-      constexpr uint16_t blockRegisters =
-        PV_DEVICES_PER_REQUEST * PV_REGISTERS_PER_DEVICE;
-      uint16_t start = command.operation == GET_PV_DATA_1
-        ? PV_FIRST_REGISTER : PV_FIRST_REGISTER + blockRegisters;
-      buffer[0] = PV_DEVICE_ID;
-      buffer[1] = 0x03;
-      buffer[2] = highByte(start);
-      buffer[3] = lowByte(start);
-      buffer[4] = highByte(blockRegisters);
-      buffer[5] = lowByte(blockRegisters);
-      uint16_t crc = crc16.modbus(buffer, 6);
-      // Modbus RTU transmits the CRC low byte first.
-      buffer[6] = lowByte(crc);
-      buffer[7] = highByte(crc);
-      length = 8;
-      break;
-    }
-    case SET_HP_FORCE_ON:
-    case SET_HP_FORCE_OFF:
-      buffer[0] = 0x41; buffer[1] = 0x03;
-      buffer[2] = command.operation == SET_HP_FORCE_ON; buffer[4] = 0xFF;
-      break;
-    case SET_HP_CO_ON:
-    case SET_HP_CO_OFF:
-      buffer[0] = 0x41; buffer[1] = 0x0C;
-      buffer[2] = command.operation == SET_HP_CO_ON; buffer[4] = 0xFF;
-      break;
-    case SET_SUMP_HEATER_ON:
-    case SET_SUMP_HEATER_OFF:
-      buffer[0] = 0x41; buffer[1] = 0x0B;
-      buffer[2] = command.operation == SET_SUMP_HEATER_ON; buffer[4] = 0xFF;
-      break;
-    case SET_COLD_PUMP_ON:
-    case SET_COLD_PUMP_OFF:
-      buffer[0] = 0x41; buffer[1] = 0x0A;
-      buffer[2] = command.operation == SET_COLD_PUMP_ON; buffer[4] = 0xFF;
-      break;
-    case SET_HOT_PUMP_ON:
-    case SET_HOT_PUMP_OFF:
-      buffer[0] = 0x41; buffer[1] = 0x09;
-      buffer[2] = command.operation == SET_HOT_PUMP_ON; buffer[4] = 0xFF;
-      break;
-    case SET_T_SETPOINT_CO:
-    case SET_T_DELTA_CO:
-    case SET_EEV_SETPOINT: {
-      buffer[0] = 0x41;
-      buffer[1] = command.operation == SET_T_SETPOINT_CO ? 0x04
-        : command.operation == SET_T_DELTA_CO ? 0x05 : 0x08;
-      double bounded = command.value < 0 ? 0
-        : command.value > 255.99 ? 255.99 : command.value;
-      uint16_t scaled = static_cast<uint16_t>(round(bounded * 100.0));
-      buffer[2] = scaled / 100;
-      buffer[3] = scaled % 100;
-      buffer[4] = 0xFF;
-      break;
-    }
-    case SET_EEV_MAXPULSES_OPEN:
-      buffer[0] = 0x41; buffer[1] = 0x0D;
-      buffer[2] = static_cast<uint8_t>(round(command.value)); buffer[4] = 0xFF;
-      break;
-    case SET_WORKING_WATT: {
-      buffer[0] = 0x41; buffer[1] = 0x0E;
-      double bounded = command.value < 0 ? 0
-        : command.value > 25599 ? 25599 : command.value;
-      uint16_t value = static_cast<uint16_t>(round(bounded));
-      buffer[2] = value / 100;
-      buffer[3] = value % 100;
-      buffer[4] = 0xFF;
-      break;
-    }
-  }
+  uint8_t buffer[MODBUS_FRAME_CAPACITY];
+  const size_t length = encodeCommand(command.operation, command.value,
+    buffer, sizeof(buffer));
+  if (length == 0) return;
 
   serial.write(buffer, length);
   serial.flush();

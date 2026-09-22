@@ -312,6 +312,18 @@ odpowiedzi falownika:
 19. próg mocy przełączający `pv_power`,
 20. czyszczenie stanu przez `reset()`.
 
+Trzeci zestaw, `test/test_modbus_frame/test_main.cpp`, pokrywa kodowanie ramek
+wydzielone z `SerialBus` do modułu `modbus_frame`:
+
+21. zgodność CRC z wartością kontrolną `0x4B37` normy CRC-16/MODBUS,
+22. pięciobajtowa ramka komend pompy i kody funkcji wszystkich par ON/OFF,
+23. rozbicie nastawy na jednostki i setne,
+24. ograniczanie wartości spoza zakresu,
+25. sąsiadujące bloki rejestrów PV mieszczące się w limicie 125 rejestrów,
+26. poprawne CRC w kolejności młodszy bajt pierwszy,
+27. odrzucenie ramki z przekłamanym bajtem,
+28. brak ramki przy zbyt małym buforze i nieznanej operacji.
+
 Testy uruchamiają się na komputerze, bez płytki:
 
 ```text
@@ -319,7 +331,7 @@ pio test -e native
 ```
 
 Środowisko `native` buduje wyłącznie pliki testowe; moduły
-`operation_controller`, `operation_parser`, `cop_estimator` i
+`operation_controller`, `operation_parser`, `cop_estimator`, `modbus_frame` i
 `pv_data_processor` nie zależą od Arduino, więc kompilują się na hoście.
 Wymaga kompilatora `g++` w `PATH`. Wpis `default_envs = esp32dev` sprawia, że
 `pio run` nadal buduje sam firmware.
