@@ -13,9 +13,13 @@ enum class PendingRead : uint8_t {
 
 class SerialBus : public CommandSink {
 public:
+  // Sized to hold a whole inverter response; the frame buffer in main.cpp
+  // must match, so both take it from here.
+  static constexpr size_t RX_BUFFER_SIZE = 2048;
+
   explicit SerialBus(HardwareSerial &serial);
 
-  void begin(uint32_t baud, size_t rxBufferSize);
+  void begin(uint32_t baud);
   void tick();
 
   bool enqueue(SERIAL_OPERATION operation, double value = 0.0) override;
@@ -45,7 +49,6 @@ private:
   };
 
   static constexpr size_t QUEUE_SIZE = 32;
-  static constexpr size_t RX_BUFFER_SIZE = 2048;
   static constexpr unsigned long COMMAND_GAP_MS = 500;
   static constexpr unsigned long READ_TIMEOUT_MS = 3000;
   static constexpr unsigned long FRAME_GAP_MS = 5;

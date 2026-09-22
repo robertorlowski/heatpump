@@ -25,7 +25,8 @@ constexpr const char *CONTROLLER_MODE_KEY = "mode";
 
 
 
-// global variables
+// Everything below belongs to this translation unit alone.
+namespace {
 RTC_DS3231 rtc;
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS_PIN, TFT_DC_PIN, TFT_MOSI_PIN,
   TFT_CLOCK_PIN, TFT_RESET_PIN);
@@ -56,6 +57,8 @@ unsigned long buttonCandidateSince = 0;
 bool pendingControllerMode = false;
 ControllerMode requestedControllerMode = ControllerMode::CLOUD;
 unsigned long requestedControllerModeAt = 0;
+bool pvFollowUpPending = false;
+}
 
 // global functions
 void respondToSerialRequest(char operation);
@@ -73,7 +76,7 @@ void saveControllerMode(ControllerMode mode);
 // main
 void setup()
 {
-  serialBus.begin(9600, SERIAL_BUFFER_SIZE);
+  serialBus.begin(9600);
 
   Wire.begin();
   rtc.begin();
@@ -109,6 +112,11 @@ void loop()
   serialBus.tick();
   cloudClient.tick();
   handleConfigPortal();
+
+  if (pvFollowUpPending) {
+    pvFollowUpPending =
+      !serialBus.enqueueFollowUp(SERIAL_OPERATION::GET_PV_DATA_2);
+  }
 
   if (cloudClient.takeOperationRequest()) cloudPostPending = true;
 
@@ -242,6 +250,7 @@ void scheduleNextDeviceRead()
     queued = serialBus.enqueue(SERIAL_OPERATION::GET_PV_DATA_1);
     if (queued) {
       pvDataProcessor.reset();
+      pvFollowUpPending = false;
     }
   } else {
     queued = serialBus.enqueue(SERIAL_OPERATION::GET_HP_DATA);
@@ -252,7 +261,7 @@ void scheduleNextDeviceRead()
 
 void processSerialInput()
 {
-  static uint8_t inData[SERIAL_BUFFER_SIZE];
+  static uint8_t inData[SerialBus::RX_BUFFER_SIZE];
   size_t length = serialBus.readFrame(inData, sizeof(inData));
   if (length == 0) return;
 
@@ -289,7 +298,10 @@ void processSerialInput()
       return;
     }
     if (pendingRead == PendingRead::PV_PART_1) {
-      serialBus.enqueueFollowUp(SERIAL_OPERATION::GET_PV_DATA_2);
+      // A refused follow-up leaves the PV reading half finished, so it is
+      // retried instead of waiting for the next full cycle.
+      pvFollowUpPending =
+        !serialBus.enqueueFollowUp(SERIAL_OPERATION::GET_PV_DATA_2);
     } else {
       if (!pvDataProcessor.complete(pv, HP_FORCE_ON)) {
         pvFrameErrors++;

@@ -32,7 +32,7 @@ lokalnego przekaźnika.
 - wylicza efektywny stan z uwzględnieniem `OFF` i `AUTO_PV`,
 - dodaje do kolejki tylko zmienione komendy,
 - steruje logicznym stanem lokalnych przekaźników,
-- przechowuje cały obiekt `HpPreferences` w RAM.
+- przechowuje cały obiekt `DeviceSettings` w RAM.
 
 ### `SerialBus`
 
@@ -59,7 +59,7 @@ lokalnego przekaźnika.
 - przekazuje stan do kontrolera,
 - zbiera telemetrię, aktualizuje TFT i publikuje dane w chmurze.
 
-### `utils.cpp`
+### `device_io.cpp`
 
 - zawiera implementację prezentacji, inicjalizacji i konwersji JSON,
 - `device_io.hpp` udostępnia wyłącznie deklaracje.
@@ -113,7 +113,7 @@ ostatnią wartość skierowaną do pompy. Pozwala to jednocześnie:
 
 ## 5. Preferencje
 
-`HpPreferences` jest jednym obiektem w RAM:
+`DeviceSettings` jest jednym obiektem w RAM:
 
 | Pole | Wartość domyślna |
 |---|---:|
@@ -166,8 +166,8 @@ Przy wejściu w `OFF` kontroler umieszcza w klasie bezpieczeństwa sekwencję:
 
 1. `SET_HP_CO_OFF`,
 2. `SET_HP_FORCE_OFF`,
-3. `SET_HOT_POMP_OFF`,
-4. `SET_COLD_POMP_OFF`.
+3. `SET_HOT_PUMP_OFF`,
+4. `SET_COLD_PUMP_OFF`.
 
 Następnie ustawia lokalne przekaźniki na `false`. Pola `force=true` i
 `hot_pomp=true` lub `cold_pomp=true` z operacji serwera nie mogą nadpisać

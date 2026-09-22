@@ -6,9 +6,9 @@ SerialBus::SerialBus(HardwareSerial &serial) : serial(serial)
 {
 }
 
-void SerialBus::begin(uint32_t baud, size_t rxBufferSize)
+void SerialBus::begin(uint32_t baud)
 {
-  serial.setRxBufferSize(rxBufferSize);
+  serial.setRxBufferSize(RX_BUFFER_SIZE);
   serial.begin(baud);
 }
 

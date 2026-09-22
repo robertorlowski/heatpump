@@ -88,6 +88,30 @@ void readBoolean(JsonObjectConst document, const char *key,
   target.present = true;
 }
 
+bool parseWorkMode(const char *text, WORK_MODE &result)
+{
+  if (text == nullptr) return false;
+  if (strcmp(text, "M") == 0) { result = WORK_MODE::MANUAL; return true; }
+  if (strcmp(text, "A") == 0) { result = WORK_MODE::AUTO; return true; }
+  if (strcmp(text, "PV") == 0) { result = WORK_MODE::AUTO_PV; return true; }
+  if (strcmp(text, "CWU") == 0) { result = WORK_MODE::CWU; return true; }
+  if (strcmp(text, "OFF") == 0) { result = WORK_MODE::OFF; return true; }
+  return false;
+}
+
+void readWorkMode(JsonObjectConst document, const char *key,
+  ServerValue<WORK_MODE> &target, uint16_t &invalidValues)
+{
+  JsonVariantConst variant = document[key];
+  if (variant.isNull()) return;
+  if (!variant.is<const char *>()
+    || !parseWorkMode(variant.as<const char *>(), target.value)) {
+    invalidValues++;
+    return;
+  }
+  target.present = true;
+}
+
 void readNumber(JsonObjectConst document, const char *key,
   ServerValue<double> &target, double minimum, double maximum,
   bool roundToWhole, uint16_t &invalidValues)
@@ -107,30 +131,8 @@ OperationParseResult parseServerOperation(JsonObjectConst document)
   OperationParseResult result;
   if (document.isNull()) return result;
 
-  JsonVariantConst modeVariant = document["work_mode"];
-  if (!modeVariant.isNull()) {
-    if (!modeVariant.is<const char *>()) {
-      result.invalidValues++;
-    } else {
-      const char *mode = modeVariant.as<const char *>();
-      result.state.workMode.present = true;
-      if (mode != nullptr && strcmp(mode, "M") == 0)
-        result.state.workMode.value = WORK_MODE::MANUAL;
-      else if (mode != nullptr && strcmp(mode, "A") == 0)
-        result.state.workMode.value = WORK_MODE::AUTO;
-      else if (mode != nullptr && strcmp(mode, "PV") == 0)
-        result.state.workMode.value = WORK_MODE::AUTO_PV;
-      else if (mode != nullptr && strcmp(mode, "CWU") == 0)
-        result.state.workMode.value = WORK_MODE::CWU;
-      else if (mode != nullptr && strcmp(mode, "OFF") == 0)
-        result.state.workMode.value = WORK_MODE::OFF;
-      else {
-        result.state.workMode.present = false;
-        result.invalidValues++;
-      }
-    }
-  }
-
+  readWorkMode(document, "work_mode", result.state.workMode,
+    result.invalidValues);
   readNumber(document, "co_min", result.state.coMin, 1, 50, true,
     result.invalidValues);
   readNumber(document, "co_max", result.state.coMax, 1, 50, true,

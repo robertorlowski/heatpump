@@ -55,8 +55,10 @@ template <>
 struct Converter<DateTime> {
   static bool toJson(const DateTime currentTime, JsonVariant destination)
   {
-    char formattedTime[20];
-    sprintf(formattedTime, "%04d.%02d.%02d %02d:%02d:%02d",
+    // "2026.09.23 22:41:07" needs 20 bytes, but the compiler cannot see that
+    // year() is bounded, so the buffer covers its worst case of 25.
+    char formattedTime[26];
+    snprintf(formattedTime, sizeof(formattedTime), "%04u.%02u.%02u %02u:%02u:%02u",
       currentTime.year(), currentTime.month(), currentTime.day(),
       currentTime.hour(), currentTime.minute(), currentTime.second());
     return destination.set(formattedTime);

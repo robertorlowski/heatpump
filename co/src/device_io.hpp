@@ -6,8 +6,6 @@
 
 #include <domain_types.hpp>
 
-constexpr size_t SERIAL_BUFFER_SIZE = 2048;
-
 bool initializeDevice(RTC_DS3231 &rtc, Adafruit_ST7735 &display);
 bool synchronizeClock(RTC_DS3231 &rtc);
 void displayStatus(Adafruit_ST7735 &display, const String &text, int line = 0);

@@ -209,13 +209,12 @@ void OperationController::setRelayState(bool coEnabled, bool cwuEnabled)
 
 void OperationController::updateRelayState(WORK_MODE mode)
 {
-  bool coMode = isCoMode(mode);
-  bool requestedCoRelay = !coMode
-    ? false
-    : (desired.coPump.present ? desired.coPump.value : coMode);
-  bool requestedCwuRelay = requestedCoRelay;
+  // Both local relays are driven as one. The server's co_pomp only matters
+  // while the work mode actually heats CO; otherwise the pair stays off.
+  const bool enabled = isCoMode(mode)
+    && (!desired.coPump.present || desired.coPump.value);
 
-  setRelayState(requestedCoRelay, requestedCwuRelay);
+  setRelayState(enabled, enabled);
 }
 
 void OperationController::reconcile()
