@@ -2,12 +2,26 @@
 
 #include <cstdint>
 
+#include <hardware_config.hpp>
+
+// One entry per microinverter port, in the order the DTU reports them.
+struct PvPanel {
+  char inverter_serial[13] = {};  // 12 BCD digits taken from the DTU record
+  uint8_t port = 0;               // port number inside the microinverter
+  int32_t power = 0;              // W
+  uint32_t prod_today = 0;        // Wh
+  uint32_t prod_total = 0;        // Wh
+  float temperature = 0.0f;       // degrees Celsius
+};
+
 struct PV {
   int64_t total_power = 0;
   uint64_t total_prod = 0;
   uint64_t total_prod_today = 0;
   float temperature = 0.0f;
   bool pv_power = false;
+  uint8_t panel_count = 0;
+  PvPanel panels[PV_MAX_PANELS]{};
 };
 
 enum SERIAL_OPERATION {

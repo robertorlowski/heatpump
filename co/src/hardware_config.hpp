@@ -14,6 +14,7 @@ constexpr uint8_t PV_REGISTERS_PER_DEVICE = 20;
 constexpr uint8_t PV_BYTES_PER_DEVICE = PV_REGISTERS_PER_DEVICE * 2;
 constexpr uint8_t PV_DEVICES_PER_REQUEST = 5;
 constexpr uint8_t PV_REQUEST_COUNT = 2;
+constexpr uint8_t PV_MAX_PANELS = PV_DEVICES_PER_REQUEST * PV_REQUEST_COUNT;
 
 // ESP32-WROOM
 constexpr uint8_t TFT_DC_PIN = 12;

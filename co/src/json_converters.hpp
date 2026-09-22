@@ -14,6 +14,22 @@ struct Converter<PV> {
     destination["total_prod"] = source.total_prod;
     destination["total_prod_today"] = source.total_prod_today;
     destination["temperature"] = source.temperature;
+
+    JsonArray panels = destination["panels"].to<JsonArray>();
+    for (uint8_t index = 0; index < source.panel_count; index++) {
+      const PvPanel &reading = source.panels[index];
+      JsonObject panel = panels.add<JsonObject>();
+      if (panel.isNull()) return false;
+      // A char array would be linked by pointer into this transient struct,
+      // so the serial goes through a const char* to force ArduinoJson to copy.
+      const char *serial = reading.inverter_serial;
+      panel["serial"] = serial;
+      panel["port"] = reading.port;
+      panel["power"] = reading.power;
+      panel["prod_today"] = reading.prod_today;
+      panel["prod_total"] = reading.prod_total;
+      panel["temperature"] = reading.temperature;
+    }
     return true;
   }
 
