@@ -68,10 +68,10 @@ void Telemetry::updateHeatPump(const HeatPumpDataUpdate &update)
     case CopDataState::STARTED:
       data["t_min"] = update.currentMiddleTemperature;
       data["t_max"] = update.currentMiddleTemperature;
-      data["cop"].clear();
-      data["cop_min"].clear();
-      data["cop_max"].clear();
-      data["cop_bottom_start"].clear();
+      data.remove("cop");
+      data.remove("cop_min");
+      data.remove("cop_max");
+      data.remove("cop_bottom_start");
       break;
 
     case CopDataState::ACTIVE:
@@ -84,9 +84,9 @@ void Telemetry::updateHeatPump(const HeatPumpDataUpdate &update)
       data["t_max"] = estimate.endMiddleTemperature;
       data["cop_bottom_start"] = estimate.startBottomTemperature;
       if (!estimate.valid) {
-        data["cop"].clear();
-        data["cop_min"].clear();
-        data["cop_max"].clear();
+        data.remove("cop");
+        data.remove("cop_min");
+        data.remove("cop_max");
         break;
       }
       data["cop_min"] = std::round(estimate.minimum * 100.0) / 100.0;

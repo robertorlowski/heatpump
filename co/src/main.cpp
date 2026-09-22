@@ -60,7 +60,7 @@ unsigned long requestedControllerModeAt = 0;
 void respondToSerialRequest(char operation);
 void processSerialInput();
 void postTelemetryToCloud();
-void applyServerOperation(JsonDocument operationDocument);
+void applyServerOperation(JsonObjectConst operation);
 void scheduleNextDeviceRead();
 void applyControllerOutputs(void);
 void processControlButton();
@@ -102,6 +102,7 @@ void loop()
   applyPendingControllerMode();
   serialBus.tick();
   operationController.tick();
+  applyControllerOutputs();
   processSerialInput();
   serialBus.tick();
   cloudClient.tick();
@@ -248,7 +249,7 @@ void scheduleNextDeviceRead()
 
 void processSerialInput()
 {
-  uint8_t inData[SERIAL_BUFFER_SIZE];
+  static uint8_t inData[SERIAL_BUFFER_SIZE];
   size_t length = serialBus.readFrame(inData, sizeof(inData));
   if (length == 0) return;
 
@@ -303,13 +304,13 @@ void respondToSerialRequest(char operation)
   switch (operation)
   {
   case 0x01:
-    serializeJsonPretty(telemetry.document(), data);
+    serializeJson(telemetry.document(), data);
     break;
   case 0x02: {
     JsonDocument settingsDocument;
     settingsDocument.set(operationController.preferences());
     settingsDocument["controller_mode"] = operationController.controllerMode();
-    serializeJsonPretty(settingsDocument, data);
+    serializeJson(settingsDocument, data);
     break;
   }
   case 0x03:
@@ -318,7 +319,7 @@ void respondToSerialRequest(char operation)
   default:
     JsonDocument doc;
     doc["error"] = 2;
-    serializeJsonPretty(doc, data);
+    serializeJson(doc, data);
     break;
   }
   writeSerialResponse(data);
@@ -326,10 +327,9 @@ void respondToSerialRequest(char operation)
 
 // TODO(server): Scheduler must perform the MANUAL -> AUTO transition.
 // This firmware applies only work_mode changes received from the server.
-void applyServerOperation(JsonDocument operationDocument) {
+void applyServerOperation(JsonObjectConst operation)
+{
   if (operationController.controllerMode() != ControllerMode::CLOUD) return;
-
-  JsonObject operation = operationDocument.as<JsonObject>();
   if (operation.isNull() || operation.size() == 0) return;
 
   OperationParseResult parsed = parseServerOperation(operation);
@@ -340,16 +340,18 @@ void applyServerOperation(JsonDocument operationDocument) {
 
 void applyControllerOutputs()
 {
-    const DeviceSettings &prefs = operationController.preferences();
   bool modeChanged = operationController.takeModeChanged();
   bool relayChanged = operationController.takeRelayChanged();
+  if (!modeChanged && !relayChanged) return;
+
+  const DeviceSettings &prefs = operationController.preferences();
 
   if (relayChanged) {
     writeRelayOutput(tft, RELAY_HP_CO_PIN, operationController.coRelay());
     writeRelayOutput(tft, RELAY_HP_CWU_PIN, operationController.cwuRelay());
   }
 
-  if (modeChanged || relayChanged) displayControllerMode(tft,
+  displayControllerMode(tft,
     operationController.controllerMode(), prefs.workMode);
 
   telemetry.updateControllerState(operationController.coRelay(),
@@ -358,7 +360,8 @@ void applyControllerOutputs()
 
 
 void postTelemetryToCloud() {
-  if (telemetry.document().isNull() || telemetry.document()["HP"].isNull()) {
+  JsonObjectConst heatPump = telemetry.document()["HP"].as<JsonObjectConst>();
+  if (heatPump.isNull() || heatPump.size() == 0) {
     return;
   }
   
@@ -374,10 +377,5 @@ void postTelemetryToCloud() {
     return;
   }  
   
-  JsonObject operation = responseDocument["operation"].as<JsonObject>();
-  if (!operation.isNull() && operation.size() > 0) {
-    JsonDocument operationDocument;
-    operationDocument.set(operation);
-    applyServerOperation(operationDocument);
-  }
+  applyServerOperation(responseDocument["operation"].as<JsonObjectConst>());
 }
