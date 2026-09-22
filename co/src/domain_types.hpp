@@ -53,7 +53,4 @@ struct DeviceSettings {
   double cwuMin = 40.0;
   double cwuMax = 47.0;
   ControllerMode controllerMode = ControllerMode::CLOUD;
-  char wifiSsid[64] = {};
-  char wifiPassword[64] = {};
-  char rootId[64] = {};
 };

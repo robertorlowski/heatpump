@@ -11,8 +11,6 @@
 #include <serial_bus.hpp>
 #include <telemetry.hpp>
 
-#include "secrets.h"
-
 constexpr int64_t HP_FORCE_ON = 2000;
 constexpr unsigned long MILLIS_REFRESH_ACTIVE = 10000;
 constexpr unsigned long MILLIS_REFRESH_IDLE = 30000;
@@ -21,6 +19,8 @@ constexpr unsigned long TIME_SYNC_INTERVAL = 6UL * 60UL * 60UL * 1000UL;
 constexpr unsigned long TIME_SYNC_RETRY_INTERVAL = 5UL * 60UL * 1000UL;
 constexpr unsigned long BUTTON_DEBOUNCE_MS = 50;
 constexpr unsigned long MODE_CHANGE_DELAY_MS = 5000;
+constexpr const char *PREFERENCES_NAMESPACE = "hp";
+constexpr const char *CONTROLLER_MODE_KEY = "mode";
 
 
 
@@ -66,8 +66,8 @@ void applyControllerOutputs(void);
 void processControlButton();
 void applyPendingControllerMode();
 ControllerMode nextControllerMode(ControllerMode currentMode);
-DeviceSettings loadDeviceSettings();
-void saveDeviceSettings(const DeviceSettings &settings);
+ControllerMode loadControllerMode();
+void saveControllerMode(ControllerMode mode);
 
 // main
 void setup()
@@ -86,8 +86,7 @@ void setup()
   buttonStableState = digitalRead(CONTROL_BUTTON_PIN) == HIGH;
   buttonCandidateState = buttonStableState;
   bool timeSynchronized = initializeDevice(rtc, tft);
-  DeviceSettings settings = loadDeviceSettings();
-  operationController.setControllerMode(settings.controllerMode);
+  operationController.setControllerMode(loadControllerMode());
   applyControllerOutputs();
   lastTimeSyncAt = millis();
   timeSyncInterval = timeSynchronized
@@ -196,39 +195,31 @@ void applyPendingControllerMode()
   pendingControllerMode = false;
   serialBus.cancelControlCommands();
   operationController.setControllerMode(requestedControllerMode);
-  DeviceSettings settings = loadDeviceSettings();
-  settings.controllerMode = requestedControllerMode;
-  saveDeviceSettings(settings);
+  saveControllerMode(requestedControllerMode);
   applyControllerOutputs();
   cloudPostPending = true;
 }
 
-DeviceSettings loadDeviceSettings()
+// Only the controller mode is decided locally and has to survive a restart.
+// Temperatures and the work mode come from the server, so they stay at the
+// DeviceSettings defaults until the first operation arrives. Storing a typed
+// key instead of a raw struct keeps the stored data readable after any change
+// to DeviceSettings.
+ControllerMode loadControllerMode()
 {
-  DeviceSettings defaults;
-  strlcpy(defaults.wifiSsid, WIFI_SSID, sizeof(defaults.wifiSsid));
-  strlcpy(defaults.wifiPassword, WIFI_PASSWORD, sizeof(defaults.wifiPassword));
-  strlcpy(defaults.rootId, CLOUD_ROOT_ID, sizeof(defaults.rootId));
-
-  devicePreferences.begin("hp", false);
-  DeviceSettings settings = defaults;
-  if (devicePreferences.getBytesLength("settings") == sizeof(settings)) {
-    devicePreferences.getBytes("settings", &settings, sizeof(settings));
-  }
+  devicePreferences.begin(PREFERENCES_NAMESPACE, true);
+  uint8_t stored = devicePreferences.getUChar(CONTROLLER_MODE_KEY,
+    static_cast<uint8_t>(ControllerMode::CLOUD));
   devicePreferences.end();
 
-  if (settings.controllerMode > ControllerMode::MANUAL_CWU) {
-    settings.controllerMode = ControllerMode::CLOUD;
-  }
-  return settings;
+  return stored <= static_cast<uint8_t>(ControllerMode::MANUAL_CWU)
+    ? static_cast<ControllerMode>(stored) : ControllerMode::CLOUD;
 }
 
-void saveDeviceSettings(const DeviceSettings &settings)
+void saveControllerMode(ControllerMode mode)
 {
-  DeviceSettings persisted = settings;
-  persisted.workMode = WORK_MODE::OFF;
-  devicePreferences.begin("hp", false);
-  devicePreferences.putBytes("settings", &persisted, sizeof(persisted));
+  devicePreferences.begin(PREFERENCES_NAMESPACE, false);
+  devicePreferences.putUChar(CONTROLLER_MODE_KEY, static_cast<uint8_t>(mode));
   devicePreferences.end();
 }
 
