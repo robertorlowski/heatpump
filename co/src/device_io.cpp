@@ -165,11 +165,16 @@ void displayControllerMode(Adafruit_ST7735 &display,
 
   display.setTextColor(ST77XX_WHITE);
   display.setTextSize(1);
-  display.setCursor(10, 150);
+  display.setCursor(10, 140);
   if (WiFi.status() == WL_CONNECTED)
     display.printf("IP: %s", WiFi.localIP().toString().c_str());
   else
     display.printf("Error WIFI");
+
+  // The access point is always up, so its address is the way back to the
+  // configuration page exactly when the configured network is unavailable.
+  display.setCursor(10, 150);
+  display.printf("AP: %s", WiFi.softAPIP().toString().c_str());
 }
 
 void writeRelayOutput(Adafruit_ST7735 &display, uint8_t pin, uint8_t value)

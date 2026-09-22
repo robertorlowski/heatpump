@@ -94,7 +94,7 @@ void setup()
   timeSyncInterval = timeSynchronized
     ? TIME_SYNC_INTERVAL : TIME_SYNC_RETRY_INTERVAL;
 
-  beginConfigPortal();
+  beginConfigPortal(telemetry);
   cloudClient.begin();
 }
 
@@ -147,9 +147,11 @@ void loop()
     refreshInterval = telemetry.heatPumpRunning()
       ? MILLIS_REFRESH_ACTIVE : MILLIS_REFRESH_IDLE;
 
-    // print ALL
-    renderDashboard(tft, coPump, rtcTime, telemetry.document(),
-      operationController.controllerMode(), prefs.workMode, pv, prefs);
+    // The dashboard would wipe the mode the button is currently selecting.
+    if (!pendingControllerMode) {
+      renderDashboard(tft, coPump, rtcTime, telemetry.document(),
+        operationController.controllerMode(), prefs.workMode, pv, prefs);
+    }
 
     cloudPostPending = true;
     scheduleNextDeviceRead();
@@ -189,6 +191,12 @@ void processControlButton()
   requestedControllerMode = nextControllerMode(baseMode);
   requestedControllerModeAt = now;
   pendingControllerMode = true;
+
+  // Show the candidate straight away. Every further press within
+  // MODE_CHANGE_DELAY_MS moves on to the next mode and restarts the delay, so
+  // whatever is on screen when it expires is the mode that gets applied.
+  displayControllerMode(tft, requestedControllerMode,
+    operationController.preferences().workMode);
 }
 
 void applyPendingControllerMode()

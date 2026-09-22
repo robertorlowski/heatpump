@@ -203,15 +203,31 @@ ramki PV. Odczyt HP używa wariantu `deserializeJson` z długością bufora.
 - `POST /api/hp/add` nadal wysyła telemetrię i pobiera obiekt `operation`.
 - Komunikat WebSocket `operation` powoduje wcześniejsze wykonanie tego POST-a.
 - Lokalny serwer HTTP obsługujący endpointy API, interfejs WWW oraz osadzone
-  pliki statyczne został usunięty z firmware. Pozostała jedna strona
-  konfiguracyjna opisana w punkcie 8.1.
+  pliki statyczne został usunięty z firmware. Pozostały strony sterownika
+  opisane w punkcie 8.1.
 - Dane harmonogramu nie są już wysyłane, ponieważ harmonogramów lokalnych nie
   ma.
 
-### 8.1. Strona konfiguracyjna
+### 8.1. Strony sterownika
 
-Sterownik wystawia na porcie 80 pojedynczą stronę z formularzem, który
-pozwala ustawić sieć Wi-Fi, hasło i `rootId` bez przebudowy firmware.
+Sterownik wystawia na porcie 80 cztery adresy, dostępne zarówno w sieci
+lokalnej, jak i na własnym punkcie dostępowym:
+
+| Adres | Dostęp | Zawartość |
+|---|---|---|
+| `GET /` | otwarty | podgląd telemetrii |
+| `GET /telemetry.json` | otwarty | ten sam dokument telemetrii w JSON |
+| `GET /install` | hasło | formularz konfiguracji |
+| `POST /save` | hasło | zapis konfiguracji |
+
+Strona główna nie renderuje danych po stronie firmware. Pobiera
+`/telemetry.json` i składa widok w przeglądarce, odświeżając co 5 sekund,
+dzięki czemu sterownik musi jedynie zserializować dokument, który i tak
+utrzymuje.
+
+`/install` i `/save` są chronione uwierzytelnianiem HTTP Basic. Dane dostępowe
+są stałymi w `device_config.hpp`, a więc znajdują się w repozytorium —
+stanowią zamek w drzwiach, nie tajemnicę.
 
 - Wartości z `secrets.h` są tylko domyślne. Zapis w NVS ma pierwszeństwo,
   a puste pole w NVS oznacza powrót do wartości domyślnej.
@@ -221,11 +237,10 @@ pozwala ustawić sieć Wi-Fi, hasło i `rootId` bez przebudowy firmware.
 - Po poprawnym zapisie sterownik uruchamia się ponownie, żeby zastosować nowe
   dane połączenia.
 - Sterownik zawsze rozgłasza własną, otwartą sieć `HP-CO-setup` i wystawia na
-  niej tę samą stronę, więc pozostaje ona dostępna niezależnie od tego, czy
-  dołączenie do skonfigurowanej sieci się powiodło. Adres punktu dostępowego
-  jest pokazywany na wyświetlaczu przy starcie.
-- Strona nie ma uwierzytelniania, a punkt dostępowy jest otwarty. Każdy w
-  zasięgu radia może odczytać `rootId` i zmienić konfigurację.
+  niej te same adresy, więc konfiguracja pozostaje dostępna niezależnie od
+  tego, czy dołączenie do skonfigurowanej sieci się powiodło. Adres punktu
+  dostępowego jest pokazywany przy starcie oraz przy przełączaniu trybów
+  przyciskiem.
 
 ## 9. Dodatkowe poprawki techniczne
 

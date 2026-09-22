@@ -17,6 +17,12 @@ constexpr const char *PREFERENCES_NAMESPACE = "hp";
 // wrong password never makes the configuration page unreachable.
 constexpr const char *CONFIG_AP_SSID = "HP-CO-setup";
 
+// Basic-auth credentials guarding /install. The telemetry page on / is open.
+// These live in tracked source, so treat them as a lock on the front door,
+// not as a secret.
+constexpr const char *INSTALL_USER = "admin";
+constexpr const char *INSTALL_PASSWORD = "123!";
+
 void loadDeviceConfig();
 const DeviceConfig &deviceConfig();
 bool saveDeviceConfig(const DeviceConfig &config);
