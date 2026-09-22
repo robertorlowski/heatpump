@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <cloud_client.hpp>
+#include <config_portal.hpp>
+#include <device_config.hpp>
 #include <device_io.hpp>
 #include <hardware_config.hpp>
 #include <heat_pump_data_processor.hpp>
@@ -19,7 +21,6 @@ constexpr unsigned long TIME_SYNC_INTERVAL = 6UL * 60UL * 60UL * 1000UL;
 constexpr unsigned long TIME_SYNC_RETRY_INTERVAL = 5UL * 60UL * 1000UL;
 constexpr unsigned long BUTTON_DEBOUNCE_MS = 50;
 constexpr unsigned long MODE_CHANGE_DELAY_MS = 5000;
-constexpr const char *PREFERENCES_NAMESPACE = "hp";
 constexpr const char *CONTROLLER_MODE_KEY = "mode";
 
 
@@ -85,6 +86,7 @@ void setup()
   digitalWrite(POWER_PIN, HIGH);
   buttonStableState = digitalRead(CONTROL_BUTTON_PIN) == HIGH;
   buttonCandidateState = buttonStableState;
+  loadDeviceConfig();
   bool timeSynchronized = initializeDevice(rtc, tft);
   operationController.setControllerMode(loadControllerMode());
   applyControllerOutputs();
@@ -92,6 +94,7 @@ void setup()
   timeSyncInterval = timeSynchronized
     ? TIME_SYNC_INTERVAL : TIME_SYNC_RETRY_INTERVAL;
 
+  beginConfigPortal();
   cloudClient.begin();
 }
 
@@ -105,6 +108,7 @@ void loop()
   processSerialInput();
   serialBus.tick();
   cloudClient.tick();
+  handleConfigPortal();
 
   if (cloudClient.takeOperationRequest()) cloudPostPending = true;
 

@@ -4,7 +4,7 @@
 #include <WiFi.h>
 #include <Wire.h>
 
-#include "secrets.h"
+#include <device_config.hpp>
 
 namespace {
 uint8_t lastSundayOfMonth(uint16_t year, uint8_t month)
@@ -79,18 +79,26 @@ bool initializeDevice(RTC_DS3231 &rtc, Adafruit_ST7735 &display)
   display.invertDisplay(false);
   display.setTextSize(1);
 
+  const DeviceConfig &config = deviceConfig();
   displayStatus(display, "WIFI connecting...");
-  WiFi.mode(WIFI_STA);
+
+  // The controller always runs its own open network, so the configuration
+  // page stays reachable no matter what happens to the configured Wi-Fi.
+  // softAP() enables the access point on top of the station mode.
+  WiFi.mode(WIFI_AP_STA);
   WiFi.persistent(false);
   WiFi.setAutoReconnect(true);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.softAP(CONFIG_AP_SSID);
+  WiFi.begin(config.wifiSsid.c_str(), config.wifiPassword.c_str());
   unsigned long wifiStartedAt = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - wifiStartedAt < 10000) {
     delay(50);
   }
 
   if (WiFi.status() != WL_CONNECTED) {
-    displayStatus(display, "Error WIFI ");
+    displayStatus(display, "Error WIFI", 0);
+    displayStatus(display, "AP: " + String(CONFIG_AP_SSID), 1);
+    displayStatus(display, "IP: " + WiFi.softAPIP().toString(), 2);
     return false;
   }
 
@@ -98,6 +106,7 @@ bool initializeDevice(RTC_DS3231 &rtc, Adafruit_ST7735 &display)
     IPAddress(8, 8, 8, 8));
   displayStatus(display, "Connected.", 0);
   displayStatus(display, "IP: " + WiFi.localIP().toString(), 1);
+  displayStatus(display, "AP: " + WiFi.softAPIP().toString(), 2);
 
   displayStatus(display, "Initialize RTC...");
   return synchronizeClock(rtc);

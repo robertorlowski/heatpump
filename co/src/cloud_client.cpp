@@ -1,7 +1,7 @@
 #include <cloud_client.hpp>
 
 #include <WiFi.h>
-#include "secrets.h"
+#include <device_config.hpp>
 
 namespace {
 constexpr const char *CLOUD_HOST = "chpc-web.onrender.com";
@@ -14,13 +14,9 @@ constexpr const char *CLOUD_BASE_URL = "https://chpc-web.onrender.com/api/";
 constexpr int32_t CONNECT_TIMEOUT_MS = 5000;
 constexpr uint16_t RESPONSE_TIMEOUT_MS = 5000;
 
-#ifndef CLOUD_ROOT_ID
-#error "CLOUD_ROOT_ID must be defined in secrets.h"
-#endif
-
 String deviceQuery()
 {
-  return String("rootId=") + CLOUD_ROOT_ID;
+  return String("rootId=") + deviceConfig().rootId;
 }
 
 String cloudUrl(const String &normalizedPath)
@@ -126,7 +122,7 @@ void CloudClient::handleWebSocketEvent(
       DeserializationError error = deserializeJson(message, payload, length);
       if (!error
         && message["type"] == "operation"
-        && message["rootId"] == CLOUD_ROOT_ID)
+        && message["rootId"] == deviceConfig().rootId.c_str())
         instance->operationRequested = true;
       break;
     }

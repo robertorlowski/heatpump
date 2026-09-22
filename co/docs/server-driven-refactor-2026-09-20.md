@@ -202,10 +202,30 @@ ramki PV. Odczyt HP używa wariantu `deserializeJson` z długością bufora.
 
 - `POST /api/hp/add` nadal wysyła telemetrię i pobiera obiekt `operation`.
 - Komunikat WebSocket `operation` powoduje wcześniejsze wykonanie tego POST-a.
-- Lokalny serwer HTTP, wszystkie lokalne endpointy API, interfejs WWW oraz
-  osadzone pliki statyczne zostały usunięte z firmware.
+- Lokalny serwer HTTP obsługujący endpointy API, interfejs WWW oraz osadzone
+  pliki statyczne został usunięty z firmware. Pozostała jedna strona
+  konfiguracyjna opisana w punkcie 8.1.
 - Dane harmonogramu nie są już wysyłane, ponieważ harmonogramów lokalnych nie
   ma.
+
+### 8.1. Strona konfiguracyjna
+
+Sterownik wystawia na porcie 80 pojedynczą stronę z formularzem, który
+pozwala ustawić sieć Wi-Fi, hasło i `rootId` bez przebudowy firmware.
+
+- Wartości z `secrets.h` są tylko domyślne. Zapis w NVS ma pierwszeństwo,
+  a puste pole w NVS oznacza powrót do wartości domyślnej.
+- Pole hasła nie jest wypełniane bieżącą wartością. Pozostawienie go pustym
+  zachowuje dotychczasowe hasło, dzięki czemu strona nie odsyła hasła Wi-Fi
+  nieszyfrowanym połączeniem.
+- Po poprawnym zapisie sterownik uruchamia się ponownie, żeby zastosować nowe
+  dane połączenia.
+- Sterownik zawsze rozgłasza własną, otwartą sieć `HP-CO-setup` i wystawia na
+  niej tę samą stronę, więc pozostaje ona dostępna niezależnie od tego, czy
+  dołączenie do skonfigurowanej sieci się powiodło. Adres punktu dostępowego
+  jest pokazywany na wyświetlaczu przy starcie.
+- Strona nie ma uwierzytelniania, a punkt dostępowy jest otwarty. Każdy w
+  zasięgu radia może odczytać `rootId` i zmienić konfigurację.
 
 ## 9. Dodatkowe poprawki techniczne
 
