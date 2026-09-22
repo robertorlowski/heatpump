@@ -5,6 +5,16 @@
 constexpr uint8_t CONTROLLER_DEVICE_ID = 0x10;
 constexpr uint8_t PV_DEVICE_ID = 0x69;
 
+// Hoymiles DTU Modbus map: the microinverter port block starts at 0x1000 and
+// every port occupies 20 registers (40 bytes). One request covers five ports,
+// two requests cover the whole installation. The request encoder and the
+// response parser must derive their addresses from these same constants.
+constexpr uint16_t PV_FIRST_REGISTER = 0x1000;
+constexpr uint8_t PV_REGISTERS_PER_DEVICE = 20;
+constexpr uint8_t PV_BYTES_PER_DEVICE = PV_REGISTERS_PER_DEVICE * 2;
+constexpr uint8_t PV_DEVICES_PER_REQUEST = 5;
+constexpr uint8_t PV_REQUEST_COUNT = 2;
+
 // ESP32-WROOM
 constexpr uint8_t TFT_DC_PIN = 12;
 constexpr uint8_t TFT_CS_PIN = 13;

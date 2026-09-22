@@ -244,18 +244,20 @@ void SerialBus::writeCommand(const Command &command)
     case GET_PV_DATA_1:
     case GET_PV_DATA_2: {
       FastCRC16 crc16;
+      constexpr uint16_t blockRegisters =
+        PV_DEVICES_PER_REQUEST * PV_REGISTERS_PER_DEVICE;
       uint16_t start = command.operation == GET_PV_DATA_1
-        ? 0x1000 : 0x1000 + 5 * 40;
-      uint16_t count = command.operation == GET_PV_DATA_1 ? 0x0280 : 0x0320;
+        ? PV_FIRST_REGISTER : PV_FIRST_REGISTER + blockRegisters;
       buffer[0] = PV_DEVICE_ID;
       buffer[1] = 0x03;
       buffer[2] = highByte(start);
       buffer[3] = lowByte(start);
-      buffer[4] = highByte(count);
-      buffer[5] = lowByte(count);
+      buffer[4] = highByte(blockRegisters);
+      buffer[5] = lowByte(blockRegisters);
       uint16_t crc = crc16.modbus(buffer, 6);
-      buffer[6] = highByte(crc);
-      buffer[7] = lowByte(crc);
+      // Modbus RTU transmits the CRC low byte first.
+      buffer[6] = lowByte(crc);
+      buffer[7] = highByte(crc);
       length = 8;
       break;
     }

@@ -259,8 +259,20 @@ void processSerialInput()
   }
 
   PendingRead pendingRead = serialBus.pendingRead();
-  if ((pendingRead == PendingRead::PV_PART_1 || pendingRead == PendingRead::PV_PART_2)
-    && length >= 2 && inData[0] == PV_DEVICE_ID && inData[1] == 0x03) {
+  bool pvPending = pendingRead == PendingRead::PV_PART_1
+    || pendingRead == PendingRead::PV_PART_2;
+
+  // A Modbus exception response means the inverter rejected the request.
+  // Without this branch it would only ever surface as a read timeout.
+  if (pvPending && length >= 2 && inData[0] == PV_DEVICE_ID
+    && inData[1] == 0x83) {
+    pvFrameErrors++;
+    serialBus.completeRead();
+    return;
+  }
+
+  if (pvPending && length >= 2 && inData[0] == PV_DEVICE_ID
+    && inData[1] == 0x03) {
     if (!serialBus.validateModbusFrame(inData, length)) {
       pvCrcErrors++;
       serialBus.completeRead();

@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include <domain_types.hpp>
+#include <hardware_config.hpp>
 
 class PvDataProcessor {
 public:
@@ -12,8 +13,7 @@ public:
   bool complete(PV &result, int64_t forceThreshold) const;
 
 private:
-  static constexpr uint8_t DEVICE_COUNT_PER_FRAME = 5;
-  static constexpr uint8_t EXPECTED_FRAME_COUNT = 2;
+  static constexpr uint8_t EXPECTED_FRAME_COUNT = PV_REQUEST_COUNT;
 
   PV accumulated{};
   uint8_t frameCount = 0;
