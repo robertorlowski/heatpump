@@ -7,6 +7,13 @@ namespace {
 constexpr const char *CLOUD_HOST = "chpc-web.onrender.com";
 constexpr const char *CLOUD_BASE_URL = "https://chpc-web.onrender.com/api/";
 
+// The main loop is blocked for the whole request, so the timeouts must cover
+// a TLS handshake plus a slow response without stalling the pump bus for
+// minutes. A cold-started instance misses one cycle and is picked up by the
+// next one.
+constexpr int32_t CONNECT_TIMEOUT_MS = 5000;
+constexpr uint16_t RESPONSE_TIMEOUT_MS = 5000;
+
 #ifndef CLOUD_ROOT_ID
 #error "CLOUD_ROOT_ID must be defined in secrets.h"
 #endif
@@ -72,7 +79,8 @@ String CloudClient::post(const String &path, const JsonDocument &data)
   }
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Cache-Control", "no-cache");
-  http.setTimeout(1000);
+  http.setConnectTimeout(CONNECT_TIMEOUT_MS);
+  http.setTimeout(RESPONSE_TIMEOUT_MS);
 
   String payload;
   serializeJson(data, payload);
