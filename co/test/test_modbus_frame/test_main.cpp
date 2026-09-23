@@ -135,6 +135,20 @@ void testOutOfRangeValuesAreClamped()
   TEST_ASSERT_EQUAL_UINT8(255, frame[2]);
 }
 
+void testMaintenanceActionsUseTheirFunctionCodes()
+{
+  uint8_t frame[MODBUS_FRAME_CAPACITY];
+
+  TEST_ASSERT_EQUAL_UINT32(5, encodeCommand(HP_ERROR_RESET, 0, frame, sizeof(frame)));
+  TEST_ASSERT_EQUAL_HEX8(0x41, frame[0]);
+  TEST_ASSERT_EQUAL_HEX8(0x10, frame[1]);
+  TEST_ASSERT_EQUAL_HEX8(0xFF, frame[4]);
+
+  TEST_ASSERT_EQUAL_UINT32(5, encodeCommand(HP_RESTART, 0, frame, sizeof(frame)));
+  TEST_ASSERT_EQUAL_HEX8(0x11, frame[1]);
+  TEST_ASSERT_EQUAL_HEX8(0xFF, frame[4]);
+}
+
 void testPvReadsCoverConsecutiveRegisterBlocks()
 {
   uint8_t first[MODBUS_FRAME_CAPACITY];
@@ -216,6 +230,7 @@ int runAllTests()
   RUN_TEST(testEveryOnOffPairKeepsItsFunctionCode);
   RUN_TEST(testSetpointIsSplitIntoUnitsAndHundredths);
   RUN_TEST(testOutOfRangeValuesAreClamped);
+  RUN_TEST(testMaintenanceActionsUseTheirFunctionCodes);
   RUN_TEST(testPvReadsCoverConsecutiveRegisterBlocks);
   RUN_TEST(testPvReadsCarryAValidCrcInModbusByteOrder);
   RUN_TEST(testCorruptedFramesFailTheCrcCheck);

@@ -7,10 +7,24 @@ OperationController::OperationController(CommandSink &commands, long pvForceThre
 
 void OperationController::applyServerPatch(const ServerOperationState &patch)
 {
+  // Maintenance actions run in every controller mode and are not kept: the
+  // server sends each one once.
+  if (patch.errorReset.present && patch.errorReset.value)
+    commands.enqueuePriority(SERIAL_OPERATION::HP_ERROR_RESET);
+  if (patch.restart.present && patch.restart.value) {
+    commands.enqueuePriority(SERIAL_OPERATION::HP_RESTART);
+    // CHPC forgets its non-persistent state (forced pumps, force start), so
+    // everything is sent again with the next server operation.
+    resetScheduledState();
+  }
+
   if (localMode != ControllerMode::CLOUD) return;
-  if (!hasServerOperationValues(patch)) return;
 
   ServerOperationState accepted = patch;
+  accepted.errorReset = {};
+  accepted.restart = {};
+  if (!hasServerOperationValues(accepted)) return;
+
 
   DeviceSettings nextPreferences = prefs;
   if (accepted.workMode.present) nextPreferences.workMode = accepted.workMode.value;

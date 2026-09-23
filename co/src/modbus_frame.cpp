@@ -126,6 +126,12 @@ size_t encodeCommand(SERIAL_OPERATION operation, double value,
         static_cast<uint8_t>(std::round(bounded)), buffer);
     }
 
+    case HP_ERROR_RESET:
+      return encodeHpCommand(0x10, 1, buffer);
+
+    case HP_RESTART:
+      return encodeHpCommand(0x11, 1, buffer);
+
     case SET_WORKING_WATT: {
       buffer[0] = HP_DEVICE_ID;
       buffer[1] = 0x0E;

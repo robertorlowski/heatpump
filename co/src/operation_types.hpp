@@ -23,6 +23,9 @@ struct ServerOperationState {
   ServerValue<double> eevMaxPulseOpen;
   ServerValue<double> eevMinPulseOpen;
   ServerValue<double> eevSetpoint;
+  // One-shot actions: executed when received, never merged into the kept state.
+  ServerValue<bool> errorReset;
+  ServerValue<bool> restart;
 };
 
 inline bool hasServerOperationValues(const ServerOperationState &state)
@@ -40,7 +43,9 @@ inline bool hasServerOperationValues(const ServerOperationState &state)
     || state.workingWatt.present
     || state.eevMaxPulseOpen.present
     || state.eevMinPulseOpen.present
-    || state.eevSetpoint.present;
+    || state.eevSetpoint.present
+    || state.errorReset.present
+    || state.restart.present;
 }
 
 template <typename T>

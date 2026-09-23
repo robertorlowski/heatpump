@@ -149,6 +149,9 @@ OperationParseResult parseServerOperation(JsonObjectConst document)
   readBoolean(document, "hot_pomp", result.state.hotPump,
     result.invalidValues);
   readBoolean(document, "force", result.state.force, result.invalidValues);
+  readBoolean(document, "error_reset", result.state.errorReset,
+    result.invalidValues);
+  readBoolean(document, "restart", result.state.restart, result.invalidValues);
   readNumber(document, "working_watt", result.state.workingWatt, 0, 25599,
     true, result.invalidValues);
   readNumber(document, "eev_max_pulse_open", result.state.eevMaxPulseOpen,

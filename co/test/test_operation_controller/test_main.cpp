@@ -385,6 +385,62 @@ void testEevMaximumIsSentBeforeMinimum()
   TEST_ASSERT_EQUAL_DOUBLE(40, sink.commands[0].value);
 }
 
+void testMaintenanceActionsAreSentOnceAndNotKept()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  controller.applyServerPatch(modePatch(WORK_MODE::AUTO));
+
+  sink.clear();
+  ServerOperationState reset;
+  reset.errorReset.present = true;
+  reset.errorReset.value = true;
+  controller.applyServerPatch(reset);
+
+  TEST_ASSERT_EQUAL_UINT32(1, sink.count);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::HP_ERROR_RESET, sink.commands[0].operation);
+  TEST_ASSERT_TRUE(sink.priorities[0]);
+  TEST_ASSERT_FALSE(controller.serverState().errorReset.present);
+
+  // The next ordinary operation does not repeat the action.
+  sink.clear();
+  controller.applyServerPatch(modePatch(WORK_MODE::AUTO));
+  TEST_ASSERT_EQUAL_UINT32(0, sink.count);
+
+  // A second request is a new action and is sent again.
+  controller.applyServerPatch(reset);
+  TEST_ASSERT_EQUAL_UINT32(1, sink.count);
+}
+
+void testRestartResendsTheWholeStateAfterwards()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  ServerOperationState running = modePatch(WORK_MODE::AUTO);
+  running.hotPump.present = true;
+  running.hotPump.value = true;
+  controller.applyServerPatch(running);
+
+  sink.clear();
+  ServerOperationState restart;
+  restart.restart.present = true;
+  restart.restart.value = true;
+  controller.applyServerPatch(restart);
+
+  TEST_ASSERT_EQUAL_UINT32(1, sink.count);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::HP_RESTART, sink.commands[0].operation);
+
+  // CHPC lost its forced pumps, so the same operation is sent in full again.
+  sink.clear();
+  controller.applyServerPatch(running);
+  TEST_ASSERT_TRUE(sink.count >= 4);
+  bool hotPumpSent = false;
+  for (size_t index = 0; index < sink.count; index++) {
+    if (sink.commands[index].operation == SERIAL_OPERATION::SET_HOT_PUMP_ON) hotPumpSent = true;
+  }
+  TEST_ASSERT_TRUE(hotPumpSent);
+}
+
 void testOperationParserReadsEevMinimum()
 {
   JsonDocument document;
@@ -456,6 +512,8 @@ int runAllTests()
   RUN_TEST(testOperationParserRejectsInvalidValues);
   RUN_TEST(testEevMaximumIsSentBeforeMinimum);
   RUN_TEST(testOperationParserReadsEevMinimum);
+  RUN_TEST(testMaintenanceActionsAreSentOnceAndNotKept);
+  RUN_TEST(testRestartResendsTheWholeStateAfterwards);
   RUN_TEST(testCopIsCompletedOnlyAfterHeatPumpStops);
   RUN_TEST(testCopBottomEstimateUsesOnlyStartupWindow);
   return UNITY_END();
