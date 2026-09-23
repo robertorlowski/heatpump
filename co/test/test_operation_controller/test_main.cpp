@@ -351,6 +351,55 @@ void testPartialPatchPreservesPreviousServerValues()
   TEST_ASSERT_EQUAL_DOUBLE(11, sink.commands[1].value);
 }
 
+void testEevMaximumIsSentBeforeMinimum()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  controller.applyServerPatch(modePatch(WORK_MODE::AUTO));
+
+  sink.clear();
+  ServerOperationState limits;
+  limits.eevMinPulseOpen.present = true;
+  limits.eevMinPulseOpen.value = 65;
+  limits.eevMaxPulseOpen.present = true;
+  limits.eevMaxPulseOpen.value = 80;
+  controller.applyServerPatch(limits);
+
+  TEST_ASSERT_EQUAL_UINT32(2, sink.count);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_EEV_MAXPULSES_OPEN,
+    sink.commands[0].operation);
+  TEST_ASSERT_EQUAL_DOUBLE(80, sink.commands[0].value);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_EEV_MINWORKPOS,
+    sink.commands[1].operation);
+  TEST_ASSERT_EQUAL_DOUBLE(65, sink.commands[1].value);
+
+  sink.clear();
+  ServerOperationState minimumOnly;
+  minimumOnly.eevMinPulseOpen.present = true;
+  minimumOnly.eevMinPulseOpen.value = 40;
+  controller.applyServerPatch(minimumOnly);
+
+  TEST_ASSERT_EQUAL_UINT32(1, sink.count);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_EEV_MINWORKPOS,
+    sink.commands[0].operation);
+  TEST_ASSERT_EQUAL_DOUBLE(40, sink.commands[0].value);
+}
+
+void testOperationParserReadsEevMinimum()
+{
+  JsonDocument document;
+  deserializeJson(document,
+    "{\"eev_min_pulse_open\":\"45\",\"eev_max_pulse_open\":\"61\"}");
+
+  OperationParseResult parsed = parseServerOperation(document.as<JsonObjectConst>());
+
+  TEST_ASSERT_EQUAL_UINT16(0, parsed.invalidValues);
+  TEST_ASSERT_TRUE(parsed.state.eevMinPulseOpen.present);
+  TEST_ASSERT_EQUAL_DOUBLE(45, parsed.state.eevMinPulseOpen.value);
+  TEST_ASSERT_TRUE(parsed.state.eevMaxPulseOpen.present);
+  TEST_ASSERT_EQUAL_DOUBLE(61, parsed.state.eevMaxPulseOpen.value);
+}
+
 void testCopIsCompletedOnlyAfterHeatPumpStops()
 {
   CopEstimator estimator;
@@ -405,6 +454,8 @@ int runAllTests()
   RUN_TEST(testRejectedQueueCommandIsRetried);
   RUN_TEST(testOperationParserAcceptsTypedValues);
   RUN_TEST(testOperationParserRejectsInvalidValues);
+  RUN_TEST(testEevMaximumIsSentBeforeMinimum);
+  RUN_TEST(testOperationParserReadsEevMinimum);
   RUN_TEST(testCopIsCompletedOnlyAfterHeatPumpStops);
   RUN_TEST(testCopBottomEstimateUsesOnlyStartupWindow);
   return UNITY_END();

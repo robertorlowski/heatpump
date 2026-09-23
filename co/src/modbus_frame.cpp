@@ -119,9 +119,10 @@ size_t encodeCommand(SERIAL_OPERATION operation, double value,
       return HP_FRAME_LENGTH;
     }
 
-    case SET_EEV_MAXPULSES_OPEN: {
+    case SET_EEV_MAXPULSES_OPEN:
+    case SET_EEV_MINWORKPOS: {
       const double bounded = value < 0 ? 0 : value > 255 ? 255 : value;
-      return encodeHpCommand(0x0D,
+      return encodeHpCommand(operation == SET_EEV_MAXPULSES_OPEN ? 0x0D : 0x0F,
         static_cast<uint8_t>(std::round(bounded)), buffer);
     }
 

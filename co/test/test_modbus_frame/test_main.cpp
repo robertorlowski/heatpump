@@ -124,6 +124,15 @@ void testOutOfRangeValuesAreClamped()
 
   encodeCommand(SET_EEV_MAXPULSES_OPEN, -5.0, frame, sizeof(frame));
   TEST_ASSERT_EQUAL_UINT8(0, frame[2]);
+
+  encodeCommand(SET_EEV_MINWORKPOS, 45.0, frame, sizeof(frame));
+  TEST_ASSERT_EQUAL_HEX8(0x41, frame[0]);
+  TEST_ASSERT_EQUAL_HEX8(0x0F, frame[1]);
+  TEST_ASSERT_EQUAL_UINT8(45, frame[2]);
+  TEST_ASSERT_EQUAL_HEX8(0xFF, frame[4]);
+
+  encodeCommand(SET_EEV_MINWORKPOS, 300.0, frame, sizeof(frame));
+  TEST_ASSERT_EQUAL_UINT8(255, frame[2]);
 }
 
 void testPvReadsCoverConsecutiveRegisterBlocks()

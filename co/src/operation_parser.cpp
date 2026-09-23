@@ -153,6 +153,8 @@ OperationParseResult parseServerOperation(JsonObjectConst document)
     true, result.invalidValues);
   readNumber(document, "eev_max_pulse_open", result.state.eevMaxPulseOpen,
     0, 255, true, result.invalidValues);
+  readNumber(document, "eev_min_pulse_open", result.state.eevMinPulseOpen,
+    0, 255, true, result.invalidValues);
   readNumber(document, "eev_setpoint", result.state.eevSetpoint, 0, 255.99,
     false, result.invalidValues);
 

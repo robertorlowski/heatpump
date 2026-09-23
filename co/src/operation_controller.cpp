@@ -274,9 +274,15 @@ void OperationController::reconcile()
     scheduleDouble(lastScheduled.workingWatt, desired.workingWatt.value,
       SERIAL_OPERATION::SET_WORKING_WATT);
 
+  // Maximum before minimum. CHPC moves the other limit when a new one would
+  // cross it, so this order ends with the requested pair either way.
   if (desired.eevMaxPulseOpen.present)
     scheduleDouble(lastScheduled.eevMaxPulseOpen, desired.eevMaxPulseOpen.value,
       SERIAL_OPERATION::SET_EEV_MAXPULSES_OPEN);
+
+  if (desired.eevMinPulseOpen.present)
+    scheduleDouble(lastScheduled.eevMinPulseOpen, desired.eevMinPulseOpen.value,
+      SERIAL_OPERATION::SET_EEV_MINWORKPOS);
 
   if (desired.eevSetpoint.present)
     scheduleDouble(lastScheduled.eevSetpoint, desired.eevSetpoint.value,

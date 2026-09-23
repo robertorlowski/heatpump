@@ -21,6 +21,7 @@ struct ServerOperationState {
   ServerValue<bool> force;
   ServerValue<double> workingWatt;
   ServerValue<double> eevMaxPulseOpen;
+  ServerValue<double> eevMinPulseOpen;
   ServerValue<double> eevSetpoint;
 };
 
@@ -38,6 +39,7 @@ inline bool hasServerOperationValues(const ServerOperationState &state)
     || state.force.present
     || state.workingWatt.present
     || state.eevMaxPulseOpen.present
+    || state.eevMinPulseOpen.present
     || state.eevSetpoint.present;
 }
 
@@ -62,5 +64,6 @@ inline void mergeServerOperation(
   mergeServerValue(target.force, patch.force);
   mergeServerValue(target.workingWatt, patch.workingWatt);
   mergeServerValue(target.eevMaxPulseOpen, patch.eevMaxPulseOpen);
+  mergeServerValue(target.eevMinPulseOpen, patch.eevMinPulseOpen);
   mergeServerValue(target.eevSetpoint, patch.eevSetpoint);
 }
