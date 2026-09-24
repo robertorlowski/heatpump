@@ -52,16 +52,16 @@ var L={co_pomp:"Pompa CO",cwu_pomp:"Pompa CWU",pv_power:"Produkcja PV",
 controller_mode:"Tryb",work_mode:"Praca",co_min:"CO min",co_max:"CO max",
 cwu_min:"CWU min",cwu_max:"CWU max",t_min:"T pocz.",t_max:"T konc.",
 cop:"COP",cop_min:"COP min",cop_max:"COP max",cop_bottom_start:"T dolu",
-total_power:"Moc",total_prod_today:"Dzis",total_prod:"Razem",
-temperature:"Temp.",Tho:"T gora",Ttarget:"T srodek",Tmin:"T min",Tmax:"T max",
+total_power:"Moc",total_prod_today:"Dziś",total_prod:"Razem",
+temperature:"Temp.",Tho:"T góra",Ttarget:"T środek",Tmin:"T min",Tmax:"T max",
 Tbe:"T przed",Tae:"T za",Tsump:"T miski",EEV:"EEV",EEV_dt:"EEV dt",
-EEV_pos:"EEV poz.",EEVmax:"EEV max",EEVmin:"EEV min",Watts:"Moc",HCS:"Ob. goracy",CCS:"Ob. zimny",
-HPS:"Sprezarka",F:"Wymusz.",CO:"CO",ERR:"Blad (kod)",ERRn:"Nr zdarzenia",ERRc:"Licznik bledow",
+EEV_pos:"EEV poz.",EEVmax:"EEV max",EEVmin:"EEV min",Watts:"Moc",HCS:"Ob. gorący",CCS:"Ob. zimny",
+HPS:"Sprężarka",F:"Wymusz.",CO:"CO",ERR:"Błąd (kod)",ERRn:"Nr zdarzenia",ERRc:"Licznik błędów",
 serial_queue_overflow:"Kolejka",serial_read_timeout:"Timeout",
-serial_receive_overflow:"Odbior",pv_crc_error:"PV CRC",
+serial_receive_overflow:"Odbiór",pv_crc_error:"PV CRC",
 hp_json_error:"HP JSON",pv_frame_error:"PV ramka",
-cloud_http_status:"HTTP",cloud_request_error:"Blad HTTP",
-websocket_disconnect:"WS rozlacz.",cloud_response_parse_error:"Parsowanie",
+cloud_http_status:"HTTP",cloud_request_error:"Błąd HTTP",
+websocket_disconnect:"WS rozłącz.",cloud_response_parse_error:"Parsowanie",
 operation_validation_error:"Operacje",preference_validation_error:"Ustawienia"};
 var DIAG=["cloud_http_status","cloud_request_error","websocket_disconnect",
 "cloud_response_parse_error","serial_queue_overflow","serial_read_timeout",
@@ -83,8 +83,8 @@ function grid(o,keys,raw){
   var h="",n=0;
   (keys||Object.keys(o)).forEach(function(k){
     if(!(k in o))return;
-    var tip=raw&&L[k]?' title="'+esc(L[k])+'"':"";
-    n++;h+='<div class="r"'+tip+'><span>'+esc(raw?k:lab(k))+"</span><b>"+
+    n++;h+='<div class="r" title="'+esc(raw?lab(k):k)+'"><span>'+
+      esc(raw?k:lab(k))+"</span><b>"+
       esc(val(o[k]))+"</b></div>";
   });
   return n?'<div class="g">'+h+"</div>":"";
@@ -94,7 +94,7 @@ function kwh(v){return typeof v==="number"?(v/1000).toFixed(1):val(v)}
 function panels(list){
   if(!list||!list.length)return "";
   var h="<thead><tr><th>Nr seryjny</th><th>Port</th><th>W</th>"+
-    "<th>Wh dzis</th><th>kWh</th><th>C</th></tr></thead><tbody>";
+    "<th>Wh dziś</th><th>kWh</th><th>C</th></tr></thead><tbody>";
   list.forEach(function(p){
     var s=val(p.serial);
     h+='<tr><td title="'+esc(s)+'">'+esc(s.length>6?s.slice(-6):s)+
@@ -108,7 +108,7 @@ function render(d){
   document.getElementById("stamp").textContent=d.time||"brak znacznika czasu";
   var pv=d.PV||{},hp=d.HP||{},o="";
   o+=sec("Sterownik",grid(d,MAIN));
-  o+=sec("Pompa ciepla",grid(hp,null,true));
+  o+=sec("Pompa ciepła",grid(hp,null,true));
   o+=sec("Cykl i COP",grid(d,COP));
   o+=sec("Diagnostyka",grid(d,DIAG));
   o+=sec("Fotowoltaika",grid(pv,["total_power","total_prod_today",
@@ -118,7 +118,7 @@ function render(d){
 function tick(){
   fetch("/telemetry.json",{cache:"no-store"}).then(function(r){
     return r.json()}).then(render).catch(function(){
-    document.getElementById("stamp").textContent="brak polaczenia"});
+    document.getElementById("stamp").textContent="brak połączenia"});
 }
 tick();setInterval(tick,5000);
 </script></body></html>)VIEW";
@@ -136,11 +136,17 @@ h1{font-size:1.25rem;margin:0 0 2px}
 .sub{margin:0 0 24px;color:#9aa0a6;font-size:.875rem}
 label{display:block;margin:18px 0 6px;font-size:.875rem;color:#c8cdd2}
 input{width:100%;padding:11px 12px;border:1px solid #3c4043;border-radius:8px;
-background:#1e2126;color:#e8eaed;font-size:1rem}
+background:#1e2126;color:#e8eaed;font:inherit}
 input:focus{outline:2px solid #5a9;outline-offset:-1px;border-color:#5a9}
+input[readonly]{background:transparent;border-style:dashed;color:#9aa0a6;
+font-family:ui-monospace,Consolas,monospace;font-size:.9rem}
+input[readonly]:focus{outline:0;border-color:#3c4043}
 small{display:block;margin-top:6px;color:#9aa0a6;font-size:.75rem}
+.st{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:.8rem}
+.st:before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+.st.on{color:#7fd6bb}.st.off{color:#f0b37a}
 button{width:100%;margin-top:28px;padding:13px;border:0;border-radius:8px;
-background:#4db6a0;color:#0b2b24;font-size:1rem;font-weight:600}
+background:#4db6a0;color:#0b2b24;font:inherit;font-weight:600}
 .msg{padding:12px 14px;border-radius:8px;margin-bottom:20px;font-size:.875rem}
 .ok{background:#12352c;color:#7fd6bb}
 .err{background:#3a1c1c;color:#f0a0a0}
@@ -156,11 +162,13 @@ autocapitalize="off" autocorrect="off" spellcheck="false">
 <input id="password" name="password" type="password" maxlength="63"
 placeholder="bez zmian">
 <small>Puste pole zostawia dotychczasowe hasło.</small>
+<label for="sn">SN</label>
+<input id="sn" value="%SERIAL%" readonly>
+<small>Numer seryjny sterownika (fabryczny MAC układu).</small>
 <label for="rootid">Root ID</label>
-<input id="rootid" name="rootid" value="%ROOTID%" required maxlength="63"
-autocapitalize="off" autocorrect="off" spellcheck="false">
-<small>Identyfikator urządzenia z GET /api/devices w chpc-web.</small>
-<button type="submit">Zapisz i uruchom ponownie</button>
+<input id="rootid" value="%ROOTID%" placeholder="brak" readonly>
+%REGISTRATION%
+<button type="submit">%BUTTON%</button>
 <p class="sub" style="text-align:center;margin:22px 0 0"><a href="/">Podgląd telemetrii</a></p>
 </form></body></html>)HTML";
 String escapeHtml(const String &value)
@@ -187,7 +195,14 @@ String renderPage(const String &message)
   String page = FPSTR(PAGE_TEMPLATE);
   page.replace("%MESSAGE%", message);
   page.replace("%SSID%", escapeHtml(config.wifiSsid));
+  page.replace("%SERIAL%", escapeHtml(deviceSerial()));
   page.replace("%ROOTID%", escapeHtml(config.rootId));
+  page.replace("%REGISTRATION%", deviceRegistered()
+    ? F("<p class=\"st on\">Zarejestrowany w chmurze</p>")
+    : F("<p class=\"st off\">Niezarejestrowany. Sterownik zarejestruje się "
+        "po połączeniu z internetem.</p>"));
+  page.replace("%BUTTON%", deviceRegistered()
+    ? F("Zapisz i uruchom ponownie") : F("Zarejestruj i uruchom ponownie"));
   return page;
 }
 
@@ -230,18 +245,14 @@ void handleSave()
 {
   if (!authorized()) return;
 
-  DeviceConfig next = deviceConfig();
-  next.wifiSsid = server.arg("ssid");
-  next.rootId = server.arg("rootid");
-
   // An empty password field keeps the stored one, so the page never has to
   // echo the Wi-Fi password back over plain HTTP.
-  const String password = server.arg("password");
-  if (password.length() > 0) next.wifiPassword = password;
+  String password = server.arg("password");
+  if (password.length() == 0) password = deviceConfig().wifiPassword;
 
-  if (!saveDeviceConfig(next)) {
+  if (!saveWifiConfig(server.arg("ssid"), password)) {
     sendPage(400, F("<div class=\"msg err\">Nie zapisano. "
-      "Sieć Wi-Fi i Root ID nie mogą być puste.</div>"));
+      "Sieć Wi-Fi nie może być pusta.</div>"));
     return;
   }
 

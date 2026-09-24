@@ -5,6 +5,8 @@
 // Runtime overrides for the compile-time defaults in secrets.h. A value stored
 // in NVS wins; an empty or missing one falls back to the built-in default, so
 // a freshly flashed controller works without visiting the configuration page.
+// An empty rootId means the controller is not registered in the cloud yet and
+// obtains one from POST /api/devices/register.
 struct DeviceConfig {
   String wifiSsid;
   String wifiPassword;
@@ -25,4 +27,12 @@ constexpr const char *INSTALL_PASSWORD = "123!";
 
 void loadDeviceConfig();
 const DeviceConfig &deviceConfig();
-bool saveDeviceConfig(const DeviceConfig &config);
+bool deviceRegistered();
+
+// Factory MAC burnt into eFuse, as 12 upper-case hex digits in the order
+// WiFi.macAddress() prints them. It identifies the controller in the cloud.
+const String &deviceSerial();
+
+// Stores the Wi-Fi fields only; the rootId is owned by the registration.
+bool saveWifiConfig(const String &ssid, const String &password);
+bool saveRootId(const String &rootId);

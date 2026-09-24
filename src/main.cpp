@@ -126,6 +126,10 @@ void loop()
       ? TIME_SYNC_INTERVAL : TIME_SYNC_RETRY_INTERVAL;
   }
 
+  if (cloudClient.registrationDue() && serialBus.isIdle()) {
+    cloudClient.registerDevice();
+  }
+
   if (cloudPostPending && serialBus.isIdle()) {
     cloudPostPending = false;
     postTelemetryToCloud();

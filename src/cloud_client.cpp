@@ -14,6 +14,10 @@ constexpr const char *CLOUD_BASE_URL = "https://chpc-web.onrender.com/api/";
 constexpr int32_t CONNECT_TIMEOUT_MS = 5000;
 constexpr uint16_t RESPONSE_TIMEOUT_MS = 5000;
 
+// A failed registration is retried at this pace, so an unreachable cloud
+// costs one blocked request a minute instead of stalling every loop.
+constexpr unsigned long REGISTRATION_RETRY_MS = 60000;
+
 String deviceQuery()
 {
   return String("rootId=") + deviceConfig().rootId;
@@ -31,10 +35,18 @@ CloudClient *CloudClient::instance = nullptr;
 void CloudClient::begin()
 {
   instance = this;
+  if (deviceRegistered()) startWebSocket();
+}
+
+// The WebSocket path carries the rootId, so an unregistered controller opens
+// it only once the registration has produced one.
+void CloudClient::startWebSocket()
+{
   String webSocketPath = String("/ws?") + deviceQuery();
   webSocket.beginSSL(CLOUD_HOST, 443, webSocketPath.c_str());
   webSocket.onEvent(handleWebSocketEvent);
   webSocket.setReconnectInterval(10000);
+  webSocketStarted = true;
 }
 
 void CloudClient::tick()
@@ -47,7 +59,40 @@ void CloudClient::tick()
     }
     return;
   }
-  webSocket.loop();
+  if (!webSocketStarted && deviceRegistered()) startWebSocket();
+  if (webSocketStarted) webSocket.loop();
+}
+
+bool CloudClient::registrationDue() const
+{
+  return !deviceRegistered() && WiFi.status() == WL_CONNECTED
+    && (!registrationAttempted
+      || millis() - lastRegistrationAt >= REGISTRATION_RETRY_MS);
+}
+
+void CloudClient::registerDevice()
+{
+  registrationAttempted = true;
+  lastRegistrationAt = millis();
+
+  const String &serial = deviceSerial();
+  if (serial.length() == 0) return;
+
+  JsonDocument request;
+  request["deviceType"] = "heat_pump";
+  request["deviceId"] = serial;
+  String response = send(String(CLOUD_BASE_URL) + "devices/register", request);
+  if (response.length() == 0) return;
+
+  JsonDocument reply;
+  if (deserializeJson(reply, response)) {
+    requestErrors++;
+    return;
+  }
+  // The same serial always gets the same rootId back, so a controller whose
+  // NVS was wiped reattaches to its existing cloud record.
+  String rootId = reply["rootId"] | "";
+  if (rootId.length() == 0 || !saveRootId(rootId)) requestErrors++;
 }
 
 bool CloudClient::takeOperationRequest()
@@ -59,16 +104,23 @@ bool CloudClient::takeOperationRequest()
 
 String CloudClient::post(const String &path, const JsonDocument &data)
 {
+  // Without a rootId the server would file the data under its default device.
+  if (!deviceRegistered()) return "";
+
+  String normalizedPath = path;
+  while (normalizedPath.startsWith("/")) normalizedPath.remove(0, 1);
+  return send(cloudUrl(normalizedPath), data);
+}
+
+String CloudClient::send(const String &url, const JsonDocument &data)
+{
   if (WiFi.status() != WL_CONNECTED) {
     httpStatus = 0;
     requestErrors++;
     return "";
   }
 
-  String normalizedPath = path;
-  while (normalizedPath.startsWith("/")) normalizedPath.remove(0, 1);
-
-  if (!http.begin(cloudUrl(normalizedPath))) {
+  if (!http.begin(url)) {
     httpStatus = 0;
     requestErrors++;
     return "";

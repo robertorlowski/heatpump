@@ -6,5 +6,6 @@
 #define WIFI_SSID "your-wifi-name"
 #define WIFI_PASSWORD "your-wifi-password"
 
-// Identyfikator konfiguracji urządzenia z GET /api/devices w chpc-web.
-#define CLOUD_ROOT_ID "your-device-root-id"
+// Opcjonalne. Bez tej wartości sterownik sam rejestruje się w chpc-web
+// (POST /api/devices/register, deviceId = SN) i zapisuje otrzymany rootId w NVS.
+// #define CLOUD_ROOT_ID "existing-device-root-id"

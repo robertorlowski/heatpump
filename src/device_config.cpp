@@ -1,6 +1,7 @@
 #include <device_config.hpp>
 
 #include <Preferences.h>
+#include <esp_mac.h>
 
 #include "secrets.h"
 
@@ -10,8 +11,9 @@
 #ifndef WIFI_PASSWORD
 #error "WIFI_PASSWORD must be defined in secrets.h"
 #endif
+// Optional: a controller flashed without it registers itself in the cloud.
 #ifndef CLOUD_ROOT_ID
-#error "CLOUD_ROOT_ID must be defined in secrets.h"
+#define CLOUD_ROOT_ID ""
 #endif
 
 namespace {
@@ -26,6 +28,17 @@ String storedOrDefault(Preferences &preferences, const char *key,
 {
   String stored = preferences.getString(key, "");
   return stored.length() > 0 ? stored : String(fallback);
+}
+
+String readSerial()
+{
+  uint8_t mac[6] = {};
+  if (esp_efuse_mac_get_default(mac) != ESP_OK) return "";
+
+  char serial[13];
+  snprintf(serial, sizeof(serial), "%02X%02X%02X%02X%02X%02X",
+    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  return serial;
 }
 }
 
@@ -45,21 +58,46 @@ const DeviceConfig &deviceConfig()
   return config;
 }
 
-bool saveDeviceConfig(const DeviceConfig &next)
+bool deviceRegistered()
 {
-  if (next.wifiSsid.length() == 0 || next.rootId.length() == 0) return false;
+  return config.rootId.length() > 0;
+}
+
+const String &deviceSerial()
+{
+  static const String serial = readSerial();
+  return serial;
+}
+
+bool saveWifiConfig(const String &ssid, const String &password)
+{
+  if (ssid.length() == 0) return false;
 
   Preferences preferences;
   if (!preferences.begin(PREFERENCES_NAMESPACE, false)) return false;
 
   // putString returns the number of bytes written, which is legitimately zero
-  // for the empty password of an open network, so only the fields that must
-  // not be empty are checked.
-  bool stored = preferences.putString(KEY_WIFI_SSID, next.wifiSsid) > 0;
-  preferences.putString(KEY_WIFI_PASSWORD, next.wifiPassword);
-  stored = preferences.putString(KEY_ROOT_ID, next.rootId) > 0 && stored;
+  // for the empty password of an open network, so only the SSID is checked.
+  bool stored = preferences.putString(KEY_WIFI_SSID, ssid) > 0;
+  preferences.putString(KEY_WIFI_PASSWORD, password);
   preferences.end();
 
-  if (stored) config = next;
+  if (stored) {
+    config.wifiSsid = ssid;
+    config.wifiPassword = password;
+  }
+  return stored;
+}
+
+bool saveRootId(const String &rootId)
+{
+  if (rootId.length() == 0) return false;
+
+  Preferences preferences;
+  if (!preferences.begin(PREFERENCES_NAMESPACE, false)) return false;
+  bool stored = preferences.putString(KEY_ROOT_ID, rootId) > 0;
+  preferences.end();
+
+  if (stored) config.rootId = rootId;
   return stored;
 }
