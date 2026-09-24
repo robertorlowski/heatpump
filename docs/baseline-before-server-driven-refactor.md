@@ -21,6 +21,8 @@ git show 0d466b7:co/src/utils.hpp
 git show 0d466b7:co/src/env.h
 ```
 
+W commicie `0d466b7` firmware znajdował się w podkatalogu `co/`, dlatego powyższe ścieżki zawierają ten prefiks. Później projekt został przeniesiony do głównego katalogu repozytorium, a obecne odpowiedniki tych plików to `src/...` i `platformio.ini`.
+
 Dokument opisuje rzeczywiste zachowanie kodu, również zachowania wyglądające na błędy. Są one istotne podczas oceny, czy późniejsza refaktoryzacja zmieniła działanie celowo, czy przypadkowo.
 
 ## 2. Rola urządzenia
@@ -458,8 +460,10 @@ Każdy punkt należy później oznaczyć jako: **zachowany**, **celowo zmieniony
 Zakres zmian kodu można uzyskać poleceniem:
 
 ```text
-git diff 0d466b7 -- co/src co/platformio.ini
+git diff -M 0d466b7 -- co/src co/platformio.ini src platformio.ini
 ```
+
+Obie pary ścieżek są potrzebne, bo w wersji bazowej kod znajdował się w `co/`; opcja `-M` pokazuje przeniesione pliki jako zmiany nazw zamiast par usunięcie/dodanie.
 
 Audyt powinien składać się z trzech części:
 
