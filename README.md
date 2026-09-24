@@ -129,6 +129,9 @@ lub interfejsów tych plików wymaga poprawki w `chpc/test/e2e/build-bridge.sh`.
 
 ## Dokumentacja
 
+- [chpc-web/CLAUDE.md](https://github.com/robertorlowski/chpc-web/blob/main/CLAUDE.md):
+  opis całego systemu i kontraktów między repozytoriami; chpc-web jest projektem
+  wiodącym.
 - [docs/server-driven-refactor-2026-09-20.md](docs/server-driven-refactor-2026-09-20.md):
   obecna architektura, przepływ operacji, tryby, UART, chmura.
 
