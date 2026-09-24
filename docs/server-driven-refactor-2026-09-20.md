@@ -236,6 +236,16 @@ stanowią zamek w drzwiach, nie tajemnicę.
   nieszyfrowanym połączeniem.
 - Po poprawnym zapisie sterownik uruchamia się ponownie, żeby zastosować nowe
   dane połączenia.
+- Formularz zmienia tylko Wi-Fi. SN (fabryczny MAC z eFuse) i Root ID są
+  wyświetlane tylko do odczytu, a pod Root ID widać status „Zarejestrowany
+  w chmurze” albo „Niezarejestrowany”. U niezarejestrowanego sterownika
+  przycisk ma napis „Zarejestruj i uruchom ponownie”.
+- Root ID nadaje chmura. Sterownik bez Root ID po połączeniu z internetem
+  wysyła `POST /api/devices/register` z `deviceId = SN`, zapisuje otrzymany
+  `rootId` w NVS i dopiero wtedy łączy WebSocket. Znany SN dostaje istniejący
+  `rootId`. Nieudana rejestracja jest ponawiana co 60 s, a do tego czasu
+  telemetria nie jest wysyłana, żeby serwer nie przypisał jej do domyślnego
+  urządzenia `hp-1`. `CLOUD_ROOT_ID` w `secrets.h` jest opcjonalny.
 - Sterownik zawsze rozgłasza własną, otwartą sieć `HP-CO-setup` i wystawia na
   niej te same adresy, więc konfiguracja pozostaje dostępna niezależnie od
   tego, czy dołączenie do skonfigurowanej sieci się powiodło. Adres punktu
@@ -349,6 +359,11 @@ weryfikowany poleceniem `pio run`.
 Testy parsera PV kodują założony układ rekordu DTU. Chronią przed regresją i
 dokumentują interpretację, ale nie zastępują weryfikacji na prawdziwym
 falowniku.
+
+Testy E2E całego łańcucha (chpc ⇄ RS-485 ⇄ co ⇄ chpc-web ⇄ przeglądarka)
+są w repozytorium `chpc`, w katalogu `test/e2e/`, razem z raportem. Most
+testowy kompiluje z tego repozytorium moduły `operation_parser`,
+`operation_controller`, `modbus_frame` i `cop_estimator`.
 
 ## 11. Świadomie pozostawione kwestie
 
