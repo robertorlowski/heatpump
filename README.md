@@ -13,13 +13,17 @@ DTU Hoymiles (0x69) ─┘                 │
                                        └── przycisk trybu
 ```
 
-Powiązane repozytoria (w `D:/DevLocal/arduino_src/`):
+Powiązane repozytoria:
 
 | Repozytorium | Rola |
 |---|---|
-| `heatpump` (to repo) | firmware `co` na ESP32 |
-| `chpc` | firmware pompy CHPC (Arduino Pro Mini) oraz testy E2E całego łańcucha |
-| `chpc-web` | serwer i klient WWW, harmonogramy, historia telemetrii |
+| [robertorlowski/heatpomp](https://github.com/robertorlowski/heatpomp) (to repo) | firmware `co` na ESP32 |
+| [robertorlowski/chpc](https://github.com/robertorlowski/chpc) | firmware pompy CHPC (Arduino Pro Mini) oraz testy E2E całego łańcucha |
+| [robertorlowski/chpc-web](https://github.com/robertorlowski/chpc-web) | serwer i klient WWW, harmonogramy, historia telemetrii |
+
+Testy E2E z `chpc` szukają tego repozytorium w katalogu `../heatpump` obok
+`chpc` (inną ścieżkę podaje się w zmiennej `CO_DIR`), więc klonuj je poleceniem
+`git clone https://github.com/robertorlowski/heatpomp.git heatpump`.
 
 ## Co robi sterownik
 
@@ -127,8 +131,6 @@ lub interfejsów tych plików wymaga poprawki w `chpc/test/e2e/build-bridge.sh`.
 
 - [docs/server-driven-refactor-2026-09-20.md](docs/server-driven-refactor-2026-09-20.md):
   obecna architektura, przepływ operacji, tryby, UART, chmura.
-- [docs/baseline-before-server-driven-refactor.md](docs/baseline-before-server-driven-refactor.md):
-  stan sprzed refaktoryzacji z 2026-09-20.
 
 ## Licencja
 
