@@ -37,6 +37,15 @@ void displayRow(Adafruit_ST7735 &display, int row, int column,
     (value != "" ? value : defaultValue).c_str());
 }
 
+void printCentered(Adafruit_ST7735 &display, const char *text, int16_t y)
+{
+  int16_t boundsX, boundsY;
+  uint16_t width, height;
+  display.getTextBounds(text, 0, y, &boundsX, &boundsY, &width, &height);
+  display.setCursor((display.width() - width) / 2, y);
+  display.print(text);
+}
+
 String jsonValueToString(JsonVariantConst value)
 {
   if (value.isNull()) return "";
@@ -129,39 +138,29 @@ void displayControllerMode(Adafruit_ST7735 &display,
   display.setTextColor(ST77XX_YELLOW);
   display.clearWriteError();
 
+  const char *source = "CLOUD";
+  const char *mode = "";
   if (controllerMode == ControllerMode::OFF) {
-    display.setCursor(10, 70);
-    display.printf("LOCAL OFF");
+    source = "LOCAL";
+    mode = "OFF";
   } else if (controllerMode == ControllerMode::MANUAL_CO) {
-    display.setCursor(10, 70);
-    display.printf("MANUAL CO");
+    source = "MANUAL";
+    mode = "CO";
   } else if (controllerMode == ControllerMode::MANUAL_CWU) {
-    display.setCursor(0, 70);
-    display.printf("MANUAL CWU");
+    source = "MANUAL";
+    mode = "CWU";
   } else {
     switch (workMode) {
-      case MANUAL:
-        display.setCursor(20, 70);
-        display.printf("CLOUD M");
-        break;
-      case AUTO:
-        display.setCursor(20, 70);
-        display.printf("CLOUD A");
-        break;
-      case CWU:
-        display.setCursor(10, 70);
-        display.printf("CLOUD CWU");
-        break;
-      case AUTO_PV:
-        display.setCursor(10, 70);
-        display.printf("CLOUD PV");
-        break;
-      case OFF:
-        display.setCursor(10, 70);
-        display.printf("CLOUD OFF");
-        break;
+      case MANUAL: mode = "MANUAL"; break;
+      case AUTO: mode = "AUTO"; break;
+      case CWU: mode = "CWU"; break;
+      case AUTO_PV: mode = "AUTO PV"; break;
+      case OFF: mode = "OFF"; break;
     }
   }
+
+  printCentered(display, source, 60);
+  printCentered(display, mode, 82);
 
   display.setTextColor(ST77XX_WHITE);
   display.setTextSize(1);
