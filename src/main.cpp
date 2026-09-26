@@ -40,6 +40,9 @@ constexpr unsigned long PV_TEMPERATURE_MAX_AGE_MS = 5UL * 60UL * 1000UL;
 // CHPC handles RS-485 frames at the start of every loop and its loop does
 // not block in normal operation, so this is margin enough.
 constexpr unsigned long READ_AFTER_COMMAND_MS = 3000;
+// The server refreshes the IMGW reading every 10 min; older than this means
+// the cloud has stopped sending it, so the screen shows "--".
+constexpr unsigned long OUTDOOR_TEMPERATURE_MAX_AGE_MS = 30UL * 60UL * 1000UL;
 // A pump that keeps rejecting a command would otherwise be read every few
 // seconds, because each check sends the command again.
 constexpr unsigned long READ_AFTER_COMMAND_MIN_INTERVAL_MS = 10000;
@@ -94,6 +97,9 @@ unsigned long lastControlCommandAt = 0;
 bool readAfterCommandDone = false;
 unsigned long lastReadAfterCommandAt = 0;
 bool postAfterHpRead = false;
+bool outdoorReceived = false;
+float outdoorTemperature = 0.0f;
+unsigned long outdoorReceivedAt = 0;
 }
 
 // global functions
@@ -334,9 +340,12 @@ void showDashboard()
   // answering), so without production the temperature is hours old.
   bool pvTemperatureCurrent = pvReceived && pv.total_power > 0
     && millis() - pvReceivedAt < PV_TEMPERATURE_MAX_AGE_MS;
-  renderDashboard(tft, operationController.coRelay(), rtcTime,
+  bool outdoorCurrent = outdoorReceived
+    && millis() - outdoorReceivedAt < OUTDOOR_TEMPERATURE_MAX_AGE_MS;
+  renderDashboard(tft, rtcTime,
     telemetry.document(), operationController.controllerMode(),
-    prefs.workMode, pv, pvTemperatureCurrent, prefs);
+    prefs.workMode, pv, pvTemperatureCurrent, prefs,
+    outdoorTemperature, outdoorCurrent);
 }
 
 // Only the controller mode is decided locally and has to survive a restart.
@@ -564,6 +573,15 @@ void postTelemetryToCloud() {
     return;
   }  
   
+  // Outdoor temperature for the screen; the server leaves it out until it
+  // has an IMGW reading.
+  JsonVariantConst outdoor = responseDocument["t_out"];
+  if (outdoor.is<float>()) {
+    outdoorTemperature = outdoor.as<float>();
+    outdoorReceived = true;
+    outdoorReceivedAt = millis();
+  }
+
   applyServerOperation(responseDocument["operation"].as<JsonObjectConst>());
 }
 

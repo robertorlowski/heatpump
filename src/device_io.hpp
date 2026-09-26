@@ -11,10 +11,12 @@ bool synchronizeClock(RTC_DS3231 &rtc);
 void displayStatus(Adafruit_ST7735 &display, const String &text, int line = 0);
 void displayControllerMode(Adafruit_ST7735 &display,
   ControllerMode controllerMode, WORK_MODE workMode);
-void renderDashboard(Adafruit_ST7735 &display, bool coOn,
+// outdoorCurrent false shows "--" instead of outdoorTemperature.
+void renderDashboard(Adafruit_ST7735 &display,
   const DateTime &rtcTime, const JsonDocument &telemetry,
   ControllerMode controllerMode, WORK_MODE workMode, const PV &pv,
-  bool pvTemperatureCurrent, const DeviceSettings &settings);
+  bool pvTemperatureCurrent, const DeviceSettings &settings,
+  float outdoorTemperature, bool outdoorCurrent);
 // Connected to the configured network and holding an address.
 bool stationOnline();
 bool accessPointEnabled();

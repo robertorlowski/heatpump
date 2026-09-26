@@ -1,5 +1,6 @@
 #include <device_io.hpp>
 
+#include <Fonts/FreeSans9pt7b.h>
 #include <NTPClient.h>
 #include <WiFi.h>
 #include <Wire.h>
@@ -215,10 +216,11 @@ void writeRelayOutput(Adafruit_ST7735 &display, uint8_t pin, uint8_t value)
   }
 }
 
-void renderDashboard(Adafruit_ST7735 &display, bool coOn,
+void renderDashboard(Adafruit_ST7735 &display,
   const DateTime &rtcTime, const JsonDocument &telemetry,
   ControllerMode controllerMode, WORK_MODE workMode, const PV &pv,
-  bool pvTemperatureCurrent, const DeviceSettings &settings)
+  bool pvTemperatureCurrent, const DeviceSettings &settings,
+  float outdoorTemperature, bool outdoorCurrent)
 {
   display.fillScreen(ST77XX_BLACK);
   display.setTextSize(1);
@@ -254,6 +256,20 @@ void renderDashboard(Adafruit_ST7735 &display, bool coOn,
   else
     display.printf("T:--");
 
+  // Outdoor temperature from the cloud (IMGW) under the tank temperature,
+  // left-aligned. The built-in font only scales by whole steps (7 or 14 px),
+  // so FreeSans 9 pt gives the size in between. With a GFX font the cursor
+  // y is the baseline. It does not depend on the pump, so it is drawn even
+  // without pump data.
+  display.setFont(&FreeSans9pt7b);
+  display.setTextSize(1);
+  display.setCursor(7, 63);
+  if (outdoorCurrent)
+    display.printf("T. zew: %.1f", outdoorTemperature);
+  else
+    display.print("T. zew: --");
+  display.setFont(nullptr);
+
   JsonObjectConst hp = telemetry["HP"].as<JsonObjectConst>();
   if (hp.isNull()) return;
 
@@ -268,7 +284,14 @@ void renderDashboard(Adafruit_ST7735 &display, bool coOn,
   if (hp["CO"].isNull()) {
     displayRow(display, 1, -1, "  T:", "----");
   } else {
-    if (coOn) display.setTextColor(ST77XX_RED);
+    // Red while CHPC counts an unresolved error (ERRc > 0; it clears after
+    // a successful run or an unlock, and 5 means locked), otherwise yellow
+    // while the compressor runs. ERR itself is only the last event's code
+    // and never goes back to 0, so it cannot tell a current error.
+    if (hp["ERRc"].as<int>() > 0)
+      display.setTextColor(ST77XX_RED);
+    else if (hp["HPS"].as<int>() > 0)
+      display.setTextColor(ST77XX_YELLOW);
     displayRow(display, 1, -1, "  T:", jsonValueToString(hp["Ttarget"]));
     display.setTextColor(ST77XX_WHITE);
   }
