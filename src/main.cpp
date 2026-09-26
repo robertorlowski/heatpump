@@ -61,11 +61,13 @@ unsigned long requestedControllerModeAt = 0;
 bool modeScreenShown = false;
 unsigned long modeScreenAt = 0;
 bool pvFollowUpPending = false;
+bool hpReadOutstanding = false;
 }
 
 // global functions
 void respondToSerialRequest(char operation);
 void processSerialInput();
+void reportHeatPumpState(JsonObjectConst hp);
 void postTelemetryToCloud();
 void applyServerOperation(JsonObjectConst operation);
 void scheduleNextDeviceRead();
@@ -284,6 +286,12 @@ void scheduleNextDeviceRead()
     }
   } else {
     queued = serialBus.enqueue(SERIAL_OPERATION::GET_HP_DATA);
+    if (queued) {
+      // The previous read got no answer: CHPC is disconnected or restarting
+      // and may have missed commands, so it gets the whole state once back.
+      if (hpReadOutstanding) operationController.heatPumpLost();
+      hpReadOutstanding = true;
+    }
   }
 
   if (queued) scheduledReadCount++;
@@ -346,13 +354,27 @@ void processSerialInput()
 
   if (pendingRead == PendingRead::HP) {
     serialBus.completeRead();
+    hpReadOutstanding = false;
     HeatPumpDataUpdate update;
     if (!heatPumpDataProcessor.processFrame(inData, length, update)) {
       hpJsonErrors++;
     } else {
       telemetry.updateHeatPump(update);
+      reportHeatPumpState(update.hp.as<JsonObjectConst>());
     }
   }
+}
+
+void reportHeatPumpState(JsonObjectConst hp)
+{
+  if (hp["CO"].isNull() || hp["F"].isNull() || hp["HPS"].isNull()) return;
+
+  HeatPumpReport report;
+  report.coOn = hp["CO"].as<int>() != 0;
+  report.force = hp["F"].as<int>() != 0;
+  report.running = hp["HPS"].as<int>() > 0;
+  operationController.updateHeatPumpReport(report);
+  applyControllerOutputs();
 }
 
 void respondToSerialRequest(char operation)

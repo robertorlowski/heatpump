@@ -102,6 +102,37 @@ void OperationController::updatePv(const PV &newPv)
     && cloudStateReady && prefs.workMode == WORK_MODE::AUTO_PV) reconcile();
 }
 
+void OperationController::updateHeatPumpReport(const HeatPumpReport &report)
+{
+  bool resync = resyncPending;
+  resyncPending = false;
+
+  if (localMode == ControllerMode::OFF) {
+    // CHPC keeps CO in EEPROM, so it can come back on from the pump itself.
+    if (resync || report.coOn || report.force) scheduleOffSequence();
+    return;
+  }
+  if (localMode != ControllerMode::CLOUD || !cloudStateReady) return;
+
+  if (resync) {
+    resetScheduledState();
+  } else {
+    WORK_MODE mode = prefs.workMode;
+    if (report.coOn != (mode != WORK_MODE::OFF)) lastHpCo = {};
+
+    // CHPC accepts force only while idle and clears it on every stop.
+    bool force;
+    if (!report.running && wantedForce(mode, force) && report.force != force)
+      lastScheduled.force = {};
+  }
+  reconcile();
+}
+
+void OperationController::heatPumpLost()
+{
+  resyncPending = true;
+}
+
 void OperationController::tick()
 {
   if (!retryPending) return;
@@ -161,6 +192,22 @@ bool OperationController::isCoMode(WORK_MODE mode) const
   return mode == WORK_MODE::MANUAL
     || mode == WORK_MODE::AUTO
     || mode == WORK_MODE::AUTO_PV;
+}
+
+// False when nothing decides force yet: the server has not sent it.
+bool OperationController::wantedForce(WORK_MODE mode, bool &force) const
+{
+  if (mode == WORK_MODE::OFF) {
+    force = false;
+    return true;
+  }
+  if (mode == WORK_MODE::AUTO_PV) {
+    force = pv.pv_power && pv.total_power >= pvForceThreshold;
+    return true;
+  }
+  if (!desired.force.present) return false;
+  force = desired.force.value;
+  return true;
 }
 
 bool OperationController::scheduleBool(ServerValue<bool> &last, bool value,
@@ -274,14 +321,10 @@ void OperationController::reconcile()
       scheduleBool(lastScheduled.hotPump, desired.hotPump.value,
         SERIAL_OPERATION::SET_HOT_PUMP_ON, SERIAL_OPERATION::SET_HOT_PUMP_OFF);
 
-    if (mode == WORK_MODE::AUTO_PV) {
-      bool force = pv.pv_power && pv.total_power >= pvForceThreshold;
+    bool force;
+    if (wantedForce(mode, force))
       scheduleBool(lastScheduled.force, force,
         SERIAL_OPERATION::SET_HP_FORCE_ON, SERIAL_OPERATION::SET_HP_FORCE_OFF);
-    } else if (desired.force.present) {
-      scheduleBool(lastScheduled.force, desired.force.value,
-        SERIAL_OPERATION::SET_HP_FORCE_ON, SERIAL_OPERATION::SET_HP_FORCE_OFF);
-    }
   }
 
   if (desired.workingWatt.present)

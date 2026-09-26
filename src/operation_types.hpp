@@ -28,6 +28,14 @@ struct ServerOperationState {
   ServerValue<bool> restart;
 };
 
+// What CHPC reports back in its stats ("CO", "F", "HPS"), compared with what
+// the controller wants so that a command CHPC missed is sent again.
+struct HeatPumpReport {
+  bool coOn = false;
+  bool force = false;
+  bool running = false;
+};
+
 inline bool hasServerOperationValues(const ServerOperationState &state)
 {
   return state.workMode.present

@@ -441,6 +441,134 @@ void testRestartResendsTheWholeStateAfterwards()
   TEST_ASSERT_TRUE(hotPumpSent);
 }
 
+HeatPumpReport report(bool coOn, bool force, bool running)
+{
+  HeatPumpReport result;
+  result.coOn = coOn;
+  result.force = force;
+  result.running = running;
+  return result;
+}
+
+bool wasSent(const RecordingSink &sink, SERIAL_OPERATION operation)
+{
+  for (size_t index = 0; index < sink.count; index++) {
+    if (sink.commands[index].operation == operation) return true;
+  }
+  return false;
+}
+
+void testCoReportedOffIsSentAgain()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  controller.applyServerPatch(modePatch(WORK_MODE::AUTO));
+
+  // CHPC missed the command, e.g. it was disconnected at the time.
+  sink.clear();
+  controller.updateHeatPumpReport(report(false, false, false));
+  TEST_ASSERT_EQUAL_UINT32(1, sink.count);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_HP_CO_ON, sink.commands[0].operation);
+
+  sink.clear();
+  controller.updateHeatPumpReport(report(true, false, false));
+  TEST_ASSERT_EQUAL_UINT32(0, sink.count);
+}
+
+void testCloudOffKeepsCoOff()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  controller.applyServerPatch(modePatch(WORK_MODE::OFF));
+
+  sink.clear();
+  controller.updateHeatPumpReport(report(true, false, false));
+  TEST_ASSERT_EQUAL_UINT32(1, sink.count);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_HP_CO_OFF, sink.commands[0].operation);
+  TEST_ASSERT_TRUE(sink.priorities[0]);
+}
+
+void testForceIsSentAgainOnlyWhileIdle()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  ServerOperationState patch = modePatch(WORK_MODE::AUTO);
+  patch.force.present = true;
+  patch.force.value = true;
+  controller.applyServerPatch(patch);
+
+  // Running without force is a normal start; CHPC would ignore force anyway.
+  sink.clear();
+  controller.updateHeatPumpReport(report(true, false, true));
+  TEST_ASSERT_EQUAL_UINT32(0, sink.count);
+
+  // CHPC cleared force when it stopped.
+  controller.updateHeatPumpReport(report(true, false, false));
+  TEST_ASSERT_EQUAL_UINT32(1, sink.count);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_HP_FORCE_ON, sink.commands[0].operation);
+}
+
+void testForceIsNotCheckedBeforeServerSendsIt()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  controller.applyServerPatch(modePatch(WORK_MODE::AUTO));
+
+  sink.clear();
+  controller.updateHeatPumpReport(report(true, true, false));
+  TEST_ASSERT_EQUAL_UINT32(0, sink.count);
+}
+
+void testLostHeatPumpGetsWholeStateBack()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  ServerOperationState patch = modePatch(WORK_MODE::AUTO);
+  patch.hotPump.present = true;
+  patch.hotPump.value = true;
+  controller.applyServerPatch(patch);
+
+  sink.clear();
+  controller.heatPumpLost();
+  controller.updateHeatPumpReport(report(true, false, false));
+  TEST_ASSERT_TRUE(wasSent(sink, SERIAL_OPERATION::SET_HP_CO_ON));
+  TEST_ASSERT_TRUE(wasSent(sink, SERIAL_OPERATION::SET_T_SETPOINT_CO));
+  TEST_ASSERT_TRUE(wasSent(sink, SERIAL_OPERATION::SET_HOT_PUMP_ON));
+
+  // Only the first report after the loss resends everything.
+  sink.clear();
+  controller.updateHeatPumpReport(report(true, false, false));
+  TEST_ASSERT_EQUAL_UINT32(0, sink.count);
+}
+
+void testLocalOffTurnsCoOffAgain()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  controller.setControllerMode(ControllerMode::OFF);
+
+  sink.clear();
+  controller.updateHeatPumpReport(report(false, false, false));
+  TEST_ASSERT_EQUAL_UINT32(0, sink.count);
+
+  // CO switched back on at the pump itself.
+  controller.updateHeatPumpReport(report(true, false, false));
+  TEST_ASSERT_TRUE(wasSent(sink, SERIAL_OPERATION::SET_HP_CO_OFF));
+}
+
+void testManualModeIgnoresHeatPumpReport()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  controller.applyServerPatch(modePatch(WORK_MODE::AUTO));
+  controller.setControllerMode(ControllerMode::MANUAL_CO);
+
+  sink.clear();
+  controller.heatPumpLost();
+  controller.updateHeatPumpReport(report(false, false, false));
+  TEST_ASSERT_EQUAL_UINT32(0, sink.count);
+}
+
 void testOperationParserReadsEevMinimum()
 {
   JsonDocument document;
@@ -514,6 +642,13 @@ int runAllTests()
   RUN_TEST(testOperationParserReadsEevMinimum);
   RUN_TEST(testMaintenanceActionsAreSentOnceAndNotKept);
   RUN_TEST(testRestartResendsTheWholeStateAfterwards);
+  RUN_TEST(testCoReportedOffIsSentAgain);
+  RUN_TEST(testCloudOffKeepsCoOff);
+  RUN_TEST(testForceIsSentAgainOnlyWhileIdle);
+  RUN_TEST(testForceIsNotCheckedBeforeServerSendsIt);
+  RUN_TEST(testLostHeatPumpGetsWholeStateBack);
+  RUN_TEST(testLocalOffTurnsCoOffAgain);
+  RUN_TEST(testManualModeIgnoresHeatPumpReport);
   RUN_TEST(testCopIsCompletedOnlyAfterHeatPumpStops);
   RUN_TEST(testCopBottomEstimateUsesOnlyStartupWindow);
   return UNITY_END();
