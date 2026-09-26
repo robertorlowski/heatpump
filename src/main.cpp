@@ -208,15 +208,15 @@ void processControlButton()
   buttonStableState = buttonCandidateState;
   if (!buttonStableState) return;
 
-  ControllerMode baseMode = pendingControllerMode
-    ? requestedControllerMode : operationController.controllerMode();
-  requestedControllerMode = nextControllerMode(baseMode);
+  // The first press only shows the current mode. Every further press within
+  // MODE_CHANGE_DELAY_MS moves on to the next mode and restarts the delay, so
+  // whatever is on screen when it expires is the mode that gets applied.
+  requestedControllerMode = pendingControllerMode
+    ? nextControllerMode(requestedControllerMode)
+    : operationController.controllerMode();
   requestedControllerModeAt = now;
   pendingControllerMode = true;
 
-  // Show the candidate straight away. Every further press within
-  // MODE_CHANGE_DELAY_MS moves on to the next mode and restarts the delay, so
-  // whatever is on screen when it expires is the mode that gets applied.
   displayControllerMode(tft, requestedControllerMode,
     operationController.preferences().workMode);
 }
@@ -227,12 +227,18 @@ void applyPendingControllerMode()
     || millis() - requestedControllerModeAt < MODE_CHANGE_DELAY_MS) return;
 
   pendingControllerMode = false;
+
+  // Only looked at, or cycled back round: the queued commands stay.
+  if (requestedControllerMode == operationController.controllerMode()) {
+    modeScreenShown = false;
+    showDashboard();
+    return;
+  }
+
   serialBus.cancelControlCommands();
   operationController.setControllerMode(requestedControllerMode);
   saveControllerMode(requestedControllerMode);
   applyControllerOutputs();
-  // Also when the chosen mode is the current one and nothing was redrawn.
-  holdModeScreen();
   cloudPostPending = true;
 }
 

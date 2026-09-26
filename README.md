@@ -39,8 +39,9 @@ Testy E2E z `chpc` szukają tego repozytorium w katalogu `../heatpump` obok
   i zapisuje otrzymany Root ID w NVS. Znany SN dostaje z powrotem swój
   dotychczasowy Root ID. Do czasu rejestracji telemetria nie jest wysyłana.
 - **Tryby.** Przycisk na GPIO5 przełącza tryb sterownika
-  `OFF → CLOUD → MANUAL_CO → MANUAL_CWU → OFF`. Tryb jest stosowany 5 s po
-  ostatnim naciśnięciu i przetrwa restart. W trybie `CLOUD` obowiązuje
+  `OFF → CLOUD → MANUAL_CO → MANUAL_CWU → OFF`. Pierwsze naciśnięcie tylko
+  pokazuje bieżący tryb, każde kolejne przechodzi do następnego. Tryb jest
+  stosowany 5 s po ostatnim naciśnięciu i przetrwa restart. W trybie `CLOUD` obowiązuje
   `work_mode` z chmury (`M`, `A`, `PV`, `CWU`, `OFF`). Pełna semantyka trybów:
   [docs/server-driven-refactor-2026-09-20.md](docs/server-driven-refactor-2026-09-20.md#6-semantyka-trybów).
 - **Strony WWW na porcie 80**, w sieci lokalnej i na własnym, otwartym punkcie
