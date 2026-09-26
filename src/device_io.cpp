@@ -190,7 +190,7 @@ void writeRelayOutput(Adafruit_ST7735 &display, uint8_t pin, uint8_t value)
 void renderDashboard(Adafruit_ST7735 &display, bool coOn,
   const DateTime &rtcTime, const JsonDocument &telemetry,
   ControllerMode controllerMode, WORK_MODE workMode, const PV &pv,
-  const DeviceSettings &settings)
+  bool pvTemperatureCurrent, const DeviceSettings &settings)
 {
   display.fillScreen(ST77XX_BLACK);
   display.setTextSize(1);
@@ -221,7 +221,10 @@ void renderDashboard(Adafruit_ST7735 &display, bool coOn,
   display.printf("P:%lld/%llu", static_cast<long long>(pv.total_power),
     static_cast<unsigned long long>(pv.total_prod_today));
   display.setCursor(90, 13);
-  display.printf("T:%2.0f", pv.temperature);
+  if (pvTemperatureCurrent)
+    display.printf("T:%2.0f", pv.temperature);
+  else
+    display.printf("T:--");
 
   JsonObjectConst hp = telemetry["HP"].as<JsonObjectConst>();
   if (hp.isNull()) return;

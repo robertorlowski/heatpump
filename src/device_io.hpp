@@ -14,6 +14,6 @@ void displayControllerMode(Adafruit_ST7735 &display,
 void renderDashboard(Adafruit_ST7735 &display, bool coOn,
   const DateTime &rtcTime, const JsonDocument &telemetry,
   ControllerMode controllerMode, WORK_MODE workMode, const PV &pv,
-  const DeviceSettings &settings);
+  bool pvTemperatureCurrent, const DeviceSettings &settings);
 void writeRelayOutput(Adafruit_ST7735 &display, uint8_t pin, uint8_t value);
 void writeSerialResponse(const String &text);

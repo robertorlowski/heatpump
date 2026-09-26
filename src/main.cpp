@@ -23,6 +23,9 @@ constexpr unsigned long BUTTON_DEBOUNCE_MS = 50;
 constexpr unsigned long MODE_CHANGE_DELAY_MS = 5000;
 constexpr unsigned long MODE_SCREEN_MS = 3000;
 constexpr const char *CONTROLLER_MODE_KEY = "mode";
+// PV is read every tenth cycle (at most every 5 min), so this allows two
+// missed readings before the inverter temperature is treated as stale.
+constexpr unsigned long PV_TEMPERATURE_MAX_AGE_MS = 15UL * 60UL * 1000UL;
 
 
 
@@ -52,6 +55,8 @@ uint32_t cloudResponseParseErrors = 0;
 uint32_t hpJsonErrors = 0;
 uint32_t pvFrameErrors = 0;
 bool cloudPostPending = false;
+bool pvReceived = false;
+unsigned long pvReceivedAt = 0;
 bool buttonStableState = false;
 bool buttonCandidateState = false;
 unsigned long buttonCandidateSince = 0;
@@ -253,9 +258,13 @@ void holdModeScreen()
 void showDashboard()
 {
   const DeviceSettings &prefs = operationController.preferences();
+  // At night the inverters sleep and the DTU keeps its last values (or stops
+  // answering), so without production the temperature is hours old.
+  bool pvTemperatureCurrent = pvReceived && pv.total_power > 0
+    && millis() - pvReceivedAt < PV_TEMPERATURE_MAX_AGE_MS;
   renderDashboard(tft, operationController.coRelay(), rtcTime,
     telemetry.document(), operationController.controllerMode(),
-    prefs.workMode, pv, prefs);
+    prefs.workMode, pv, pvTemperatureCurrent, prefs);
 }
 
 // Only the controller mode is decided locally and has to survive a restart.
@@ -351,6 +360,8 @@ void processSerialInput()
         pvFrameErrors++;
         return;
       }
+      pvReceived = true;
+      pvReceivedAt = millis();
       telemetry.updatePv(pv);
       operationController.updatePv(pv);
       applyControllerOutputs();
