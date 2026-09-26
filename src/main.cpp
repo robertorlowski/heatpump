@@ -390,12 +390,10 @@ void applyControllerOutputs()
 }
 
 
+// Sent even without CHPC data: the server stores telemetry only when it holds
+// HP.Ttarget, but always answers with the operation, so the controller gets
+// its work mode while the pump is disconnected.
 void postTelemetryToCloud() {
-  JsonObjectConst heatPump = telemetry.document()["HP"].as<JsonObjectConst>();
-  if (heatPump.isNull() || heatPump.size() == 0) {
-    return;
-  }
-  
   String response = cloudClient.post("hp/add", telemetry.document());
   if (response == "" ) {
     return;
