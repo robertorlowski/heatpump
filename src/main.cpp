@@ -21,6 +21,7 @@ constexpr unsigned long TIME_SYNC_INTERVAL = 6UL * 60UL * 60UL * 1000UL;
 constexpr unsigned long TIME_SYNC_RETRY_INTERVAL = 5UL * 60UL * 1000UL;
 constexpr unsigned long BUTTON_DEBOUNCE_MS = 50;
 constexpr unsigned long MODE_CHANGE_DELAY_MS = 5000;
+constexpr unsigned long MODE_SCREEN_MS = 3000;
 constexpr const char *CONTROLLER_MODE_KEY = "mode";
 
 
@@ -57,6 +58,8 @@ unsigned long buttonCandidateSince = 0;
 bool pendingControllerMode = false;
 ControllerMode requestedControllerMode = ControllerMode::CLOUD;
 unsigned long requestedControllerModeAt = 0;
+bool modeScreenShown = false;
+unsigned long modeScreenAt = 0;
 bool pvFollowUpPending = false;
 }
 
@@ -69,6 +72,8 @@ void scheduleNextDeviceRead();
 void applyControllerOutputs(void);
 void processControlButton();
 void applyPendingControllerMode();
+void holdModeScreen();
+void showDashboard();
 ControllerMode nextControllerMode(ControllerMode currentMode);
 ControllerMode loadControllerMode();
 void saveControllerMode(ControllerMode mode);
@@ -112,6 +117,11 @@ void loop()
   serialBus.tick();
   cloudClient.tick();
   handleConfigPortal();
+
+  if (modeScreenShown && millis() - modeScreenAt >= MODE_SCREEN_MS) {
+    modeScreenShown = false;
+    if (!pendingControllerMode) showDashboard();
+  }
 
   if (pvFollowUpPending) {
     pvFollowUpPending =
@@ -159,11 +169,9 @@ void loop()
     refreshInterval = telemetry.heatPumpRunning()
       ? MILLIS_REFRESH_ACTIVE : MILLIS_REFRESH_IDLE;
 
-    // The dashboard would wipe the mode the button is currently selecting.
-    if (!pendingControllerMode) {
-      renderDashboard(tft, coPump, rtcTime, telemetry.document(),
-        operationController.controllerMode(), prefs.workMode, pv, prefs);
-    }
+    // The dashboard would wipe the mode the button is currently selecting or
+    // the mode screen before its MODE_SCREEN_MS have passed.
+    if (!pendingControllerMode && !modeScreenShown) showDashboard();
 
     cloudPostPending = true;
     scheduleNextDeviceRead();
@@ -221,7 +229,25 @@ void applyPendingControllerMode()
   operationController.setControllerMode(requestedControllerMode);
   saveControllerMode(requestedControllerMode);
   applyControllerOutputs();
+  // Also when the chosen mode is the current one and nothing was redrawn.
+  holdModeScreen();
   cloudPostPending = true;
+}
+
+// The mode screen stays for MODE_SCREEN_MS and then gives way to the
+// dashboard, whatever the device read interval is.
+void holdModeScreen()
+{
+  modeScreenShown = true;
+  modeScreenAt = millis();
+}
+
+void showDashboard()
+{
+  const DeviceSettings &prefs = operationController.preferences();
+  renderDashboard(tft, operationController.coRelay(), rtcTime,
+    telemetry.document(), operationController.controllerMode(),
+    prefs.workMode, pv, prefs);
 }
 
 // Only the controller mode is decided locally and has to survive a restart.
@@ -384,6 +410,7 @@ void applyControllerOutputs()
 
   displayControllerMode(tft,
     operationController.controllerMode(), prefs.workMode);
+  holdModeScreen();
 
   telemetry.updateControllerState(operationController.coRelay(),
     operationController.cwuRelay(), operationController.controllerMode(), prefs);
