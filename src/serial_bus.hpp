@@ -32,6 +32,9 @@ public:
   PendingRead pendingRead() const;
   bool isIdle() const;
   void completeRead();
+  // True once after a command that changes the pump (anything but a read)
+  // has gone out, so the caller can check its effect soon.
+  bool takeControlCommandWritten();
   uint32_t queueOverflowCount() const;
   uint32_t readTimeoutCount() const;
   uint32_t receiveOverflowCount() const;
@@ -64,6 +67,7 @@ private:
   unsigned long pendingSince = 0;
   unsigned long lastByteAt = 0;
   bool hasWritten = false;
+  bool controlCommandWritten = false;
   bool discardingReceiveFrame = false;
   PendingRead pending = PendingRead::NONE;
   uint32_t queueOverflows = 0;

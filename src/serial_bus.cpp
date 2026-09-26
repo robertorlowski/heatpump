@@ -125,6 +125,7 @@ void SerialBus::tick()
   writeCommand(command);
   hasWritten = true;
   lastWriteAt = now;
+  if (!isReadOperation(command.operation)) controlCommandWritten = true;
 
   pending = readTypeFor(command.operation);
   if (pending != PendingRead::NONE) pendingSince = now;
@@ -186,6 +187,13 @@ bool SerialBus::isIdle() const
 void SerialBus::completeRead()
 {
   pending = PendingRead::NONE;
+}
+
+bool SerialBus::takeControlCommandWritten()
+{
+  bool written = controlCommandWritten;
+  controlCommandWritten = false;
+  return written;
 }
 
 uint32_t SerialBus::queueOverflowCount() const

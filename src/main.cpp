@@ -34,6 +34,15 @@ constexpr unsigned long PV_POST_RETRY_MS = 60UL * 1000UL;
 // Allows several missed readings before the inverter temperature is treated
 // as stale.
 constexpr unsigned long PV_TEMPERATURE_MAX_AGE_MS = 5UL * 60UL * 1000UL;
+// After the last command of a batch the pump is read this soon instead of on
+// the next regular cycle, so a missed command is sent again within seconds
+// and the cloud sees the new state right away.
+// CHPC handles RS-485 frames at the start of every loop and its loop does
+// not block in normal operation, so this is margin enough.
+constexpr unsigned long READ_AFTER_COMMAND_MS = 3000;
+// A pump that keeps rejecting a command would otherwise be read every few
+// seconds, because each check sends the command again.
+constexpr unsigned long READ_AFTER_COMMAND_MIN_INTERVAL_MS = 10000;
 
 
 
@@ -80,6 +89,11 @@ bool modeScreenShown = false;
 unsigned long modeScreenAt = 0;
 bool pvFollowUpPending = false;
 bool hpReadOutstanding = false;
+bool readAfterCommandPending = false;
+unsigned long lastControlCommandAt = 0;
+bool readAfterCommandDone = false;
+unsigned long lastReadAfterCommandAt = 0;
+bool postAfterHpRead = false;
 }
 
 // global functions
@@ -89,6 +103,7 @@ void reportHeatPumpState(JsonObjectConst hp);
 void postTelemetryToCloud();
 void postPvTelemetryToCloud();
 void schedulePvRead();
+void refreshTelemetry();
 void applyServerOperation(JsonObjectConst operation);
 void scheduleNextDeviceRead();
 void applyControllerOutputs(void);
@@ -180,37 +195,66 @@ void loop()
     schedulePvRead();
   }
 
+  if (serialBus.takeControlCommandWritten()) {
+    readAfterCommandPending = true;
+    lastControlCommandAt = millis();
+  }
+
+  // isIdle() also waits for the rest of the batch, so the delay counts from
+  // the last command.
+  if (readAfterCommandPending && serialBus.isIdle()
+    && millis() - lastControlCommandAt >= READ_AFTER_COMMAND_MS
+    && (!readAfterCommandDone
+      || millis() - lastReadAfterCommandAt >= READ_AFTER_COMMAND_MIN_INTERVAL_MS))
+  {
+    readAfterCommandPending = false;
+    readAfterCommandDone = true;
+    lastReadAfterCommandAt = millis();
+    // The regular cycle restarts here instead of reading again right away.
+    lastRefreshAt = millis();
+    postAfterHpRead = true;
+    scheduleNextDeviceRead();
+  }
+
   if (lastRefreshAt == static_cast<unsigned long>(-1)
     || millis() - lastRefreshAt > refreshInterval)
   {
     lastRefreshAt = millis();
-  
-    rtcTime = rtc.now(); // Get current time from RTC
-    const DeviceSettings &prefs = operationController.preferences();
-    bool coPump = operationController.coRelay();
-    bool cwuPump = operationController.cwuRelay();
+    refreshTelemetry();
 
-    telemetry.updateSnapshot(rtcTime, coPump, cwuPump,
-      operationController.controllerMode(), prefs);
-    telemetry.updateSerialDiagnostics(
-      serialBus.queueOverflowCount(), serialBus.readTimeoutCount(),
-      serialBus.receiveOverflowCount(), pvCrcErrors, hpJsonErrors, pvFrameErrors);
-    telemetry.updateCloudDiagnostics(
-      cloudClient.lastHttpStatus(), cloudClient.requestErrorCount(),
-      cloudClient.webSocketDisconnectCount(), cloudResponseParseErrors);
-    telemetry.updateOperationDiagnostics(operationValidationErrors,
-      operationController.preferenceValidationErrorCount());
-
-    refreshInterval = telemetry.heatPumpRunning()
-      ? MILLIS_REFRESH_ACTIVE : MILLIS_REFRESH_IDLE;
-
-    // The dashboard would wipe the mode the button is currently selecting or
-    // the mode screen before its MODE_SCREEN_MS have passed.
-    if (!pendingControllerMode && !modeScreenShown) showDashboard();
-
+    // This read covers a command sent long enough ago.
+    if (millis() - lastControlCommandAt >= READ_AFTER_COMMAND_MS)
+      readAfterCommandPending = false;
+    postAfterHpRead = false;
     cloudPostPending = true;
     scheduleNextDeviceRead();
   }
+}
+
+void refreshTelemetry()
+{
+  rtcTime = rtc.now(); // Get current time from RTC
+  const DeviceSettings &prefs = operationController.preferences();
+  bool coPump = operationController.coRelay();
+  bool cwuPump = operationController.cwuRelay();
+
+  telemetry.updateSnapshot(rtcTime, coPump, cwuPump,
+    operationController.controllerMode(), prefs);
+  telemetry.updateSerialDiagnostics(
+    serialBus.queueOverflowCount(), serialBus.readTimeoutCount(),
+    serialBus.receiveOverflowCount(), pvCrcErrors, hpJsonErrors, pvFrameErrors);
+  telemetry.updateCloudDiagnostics(
+    cloudClient.lastHttpStatus(), cloudClient.requestErrorCount(),
+    cloudClient.webSocketDisconnectCount(), cloudResponseParseErrors);
+  telemetry.updateOperationDiagnostics(operationValidationErrors,
+    operationController.preferenceValidationErrorCount());
+
+  refreshInterval = telemetry.heatPumpRunning()
+    ? MILLIS_REFRESH_ACTIVE : MILLIS_REFRESH_IDLE;
+
+  // The dashboard would wipe the mode the button is currently selecting or
+  // the mode screen before its MODE_SCREEN_MS have passed.
+  if (!pendingControllerMode && !modeScreenShown) showDashboard();
 }
 
 ControllerMode nextControllerMode(ControllerMode currentMode)
@@ -405,6 +449,12 @@ void processSerialInput()
     } else {
       telemetry.updateHeatPump(update);
       reportHeatPumpState(update.hp.as<JsonObjectConst>());
+      if (postAfterHpRead) {
+        // The state after a command goes to the cloud at once.
+        postAfterHpRead = false;
+        refreshTelemetry();
+        cloudPostPending = true;
+      }
     }
   }
 }
