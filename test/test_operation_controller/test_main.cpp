@@ -569,6 +569,109 @@ void testManualModeIgnoresHeatPumpReport()
   TEST_ASSERT_EQUAL_UINT32(0, sink.count);
 }
 
+HeatPumpReport temperatureReport(double setpoint, double minimum)
+{
+  HeatPumpReport result = report(true, false, false);
+  result.hasTemperatures = true;
+  result.setpoint = setpoint;
+  result.minimum = minimum;
+  return result;
+}
+
+ServerOperationState temperaturePatch(WORK_MODE mode, double coMin, double coMax,
+  double cwuMin, double cwuMax)
+{
+  ServerOperationState patch = modePatch(mode);
+  patch.coMin.present = true;
+  patch.coMin.value = coMin;
+  patch.coMax.present = true;
+  patch.coMax.value = coMax;
+  patch.cwuMin.present = true;
+  patch.cwuMin.value = cwuMin;
+  patch.cwuMax.present = true;
+  patch.cwuMax.value = cwuMax;
+  return patch;
+}
+
+void testLostDeltaIsSentAgain()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  controller.applyServerPatch(temperaturePatch(WORK_MODE::AUTO, 35, 45, 25, 48));
+
+  // The case seen on 2026-09-26: the setpoint arrived, the delta frame did
+  // not, so CHPC kept the CWU delta of 23 and reported Tmin 22.
+  sink.clear();
+  controller.updateHeatPumpReport(temperatureReport(45, 22));
+  TEST_ASSERT_EQUAL_UINT32(1, sink.count);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_T_DELTA_CO, sink.commands[0].operation);
+  TEST_ASSERT_EQUAL_DOUBLE(10.0, sink.commands[0].value);
+
+  sink.clear();
+  controller.updateHeatPumpReport(temperatureReport(45, 35));
+  TEST_ASSERT_EQUAL_UINT32(0, sink.count);
+}
+
+void testLostSetpointIsSentAgainInCwuMode()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  controller.applyServerPatch(temperaturePatch(WORK_MODE::CWU, 35, 45, 25, 48));
+
+  // Delta 23 already matches, only the setpoint of the previous mode is left.
+  sink.clear();
+  controller.updateHeatPumpReport(temperatureReport(45, 22));
+  TEST_ASSERT_EQUAL_UINT32(1, sink.count);
+  TEST_ASSERT_EQUAL_INT(SERIAL_OPERATION::SET_T_SETPOINT_CO, sink.commands[0].operation);
+  TEST_ASSERT_EQUAL_DOUBLE(48.0, sink.commands[0].value);
+}
+
+void testRoundedTemperaturesAreNotSentAgain()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  controller.applyServerPatch(temperaturePatch(WORK_MODE::AUTO, 35.25, 45.75, 25, 48));
+
+  // CHPC prints one decimal.
+  sink.clear();
+  controller.updateHeatPumpReport(temperatureReport(45.8, 35.3));
+  TEST_ASSERT_EQUAL_UINT32(0, sink.count);
+}
+
+void testDeltaChpcRejectsIsNotSentAgain()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  // Delta 35 is above the CHPC limit of 30, so CHPC keeps its old one.
+  controller.applyServerPatch(temperaturePatch(WORK_MODE::AUTO, 10, 45, 25, 48));
+
+  sink.clear();
+  controller.updateHeatPumpReport(temperatureReport(45, 22));
+  TEST_ASSERT_EQUAL_UINT32(0, sink.count);
+}
+
+void testTemperaturesAreNotCheckedInOffMode()
+{
+  RecordingSink sink;
+  OperationController controller(sink);
+  controller.applyServerPatch(temperaturePatch(WORK_MODE::OFF, 35, 45, 25, 48));
+
+  sink.clear();
+  HeatPumpReport offReport = temperatureReport(45, 22);
+  offReport.coOn = false;
+  controller.updateHeatPumpReport(offReport);
+  TEST_ASSERT_EQUAL_UINT32(0, sink.count);
+}
+
+void testReportedTemperatureStringsAreParsed()
+{
+  // CHPC sends every value as a string; main.cpp relies on as<double>().
+  JsonDocument document;
+  deserializeJson(document, R"({"Tmax":"45.0","Tmin":"22.0"})");
+  TEST_ASSERT_EQUAL_DOUBLE(45.0, document["Tmax"].as<double>());
+  TEST_ASSERT_EQUAL_DOUBLE(22.0, document["Tmin"].as<double>());
+}
+
 void testOperationParserReadsEevMinimum()
 {
   JsonDocument document;
@@ -649,6 +752,12 @@ int runAllTests()
   RUN_TEST(testLostHeatPumpGetsWholeStateBack);
   RUN_TEST(testLocalOffTurnsCoOffAgain);
   RUN_TEST(testManualModeIgnoresHeatPumpReport);
+  RUN_TEST(testLostDeltaIsSentAgain);
+  RUN_TEST(testLostSetpointIsSentAgainInCwuMode);
+  RUN_TEST(testRoundedTemperaturesAreNotSentAgain);
+  RUN_TEST(testDeltaChpcRejectsIsNotSentAgain);
+  RUN_TEST(testTemperaturesAreNotCheckedInOffMode);
+  RUN_TEST(testReportedTemperatureStringsAreParsed);
   RUN_TEST(testCopIsCompletedOnlyAfterHeatPumpStops);
   RUN_TEST(testCopBottomEstimateUsesOnlyStartupWindow);
   return UNITY_END();

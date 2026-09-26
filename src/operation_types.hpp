@@ -28,12 +28,17 @@ struct ServerOperationState {
   ServerValue<bool> restart;
 };
 
-// What CHPC reports back in its stats ("CO", "F", "HPS"), compared with what
-// the controller wants so that a command CHPC missed is sent again.
+// What CHPC reports back in its stats ("CO", "F", "HPS", "Tmax", "Tmin"),
+// compared with what the controller wants so that a command CHPC missed is
+// sent again.
 struct HeatPumpReport {
   bool coOn = false;
   bool force = false;
   bool running = false;
+  // CHPC reports its setpoint as Tmax and setpoint minus delta as Tmin.
+  bool hasTemperatures = false;
+  double setpoint = 0.0;
+  double minimum = 0.0;
 };
 
 inline bool hasServerOperationValues(const ServerOperationState &state)

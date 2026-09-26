@@ -1,5 +1,22 @@
 #include <operation_controller.hpp>
 
+#include <cmath>
+
+namespace {
+// CHPC ignores a setpoint or delta above these limits (T_SETPOINT_MAX and
+// T_DELTA_MAX in its firmware), so such a value is not sent again.
+constexpr double CHPC_SETPOINT_MAX = 50.0;
+constexpr double CHPC_DELTA_MAX = 30.0;
+// CHPC prints one decimal, so the reported difference of two values can be
+// off by 0.1.
+constexpr double REPORTED_TEMPERATURE_TOLERANCE = 0.11;
+
+bool reportedDiffers(double reported, double wanted)
+{
+  return std::fabs(reported - wanted) > REPORTED_TEMPERATURE_TOLERANCE;
+}
+}
+
 OperationController::OperationController(CommandSink &commands, long pvForceThreshold)
   : commands(commands), pvForceThreshold(pvForceThreshold)
 {
@@ -124,6 +141,19 @@ void OperationController::updateHeatPumpReport(const HeatPumpReport &report)
     bool force;
     if (!report.running && wantedForce(mode, force) && report.force != force)
       lastScheduled.force = {};
+
+    // A setpoint or delta frame lost on the shared bus would otherwise leave
+    // CHPC on the limits of the previous mode for good.
+    if (report.hasTemperatures && mode != WORK_MODE::OFF) {
+      const bool coMode = isCoMode(mode);
+      const double maximum = coMode ? prefs.coMax : prefs.cwuMax;
+      const double delta = maximum - (coMode ? prefs.coMin : prefs.cwuMin);
+      if (maximum <= CHPC_SETPOINT_MAX && reportedDiffers(report.setpoint, maximum))
+        lastSetpoint = {};
+      if (delta <= CHPC_DELTA_MAX
+        && reportedDiffers(report.setpoint - report.minimum, delta))
+        lastDelta = {};
+    }
   }
   reconcile();
 }

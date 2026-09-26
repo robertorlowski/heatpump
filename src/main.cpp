@@ -417,6 +417,12 @@ void reportHeatPumpState(JsonObjectConst hp)
   report.coOn = hp["CO"].as<int>() != 0;
   report.force = hp["F"].as<int>() != 0;
   report.running = hp["HPS"].as<int>() > 0;
+  // CHPC sends numbers as strings; as<double>() parses them.
+  report.hasTemperatures = !hp["Tmax"].isNull() && !hp["Tmin"].isNull();
+  if (report.hasTemperatures) {
+    report.setpoint = hp["Tmax"].as<double>();
+    report.minimum = hp["Tmin"].as<double>();
+  }
   operationController.updateHeatPumpReport(report);
   applyControllerOutputs();
 }
