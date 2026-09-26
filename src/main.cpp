@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Preferences.h>
+#include <access_point_policy.hpp>
 #include <cloud_client.hpp>
 #include <config_portal.hpp>
 #include <device_config.hpp>
@@ -10,6 +11,7 @@
 #include <operation_controller.hpp>
 #include <operation_parser.hpp>
 #include <pv_data_processor.hpp>
+#include <pv_telemetry.hpp>
 #include <serial_bus.hpp>
 #include <telemetry.hpp>
 
@@ -23,9 +25,15 @@ constexpr unsigned long BUTTON_DEBOUNCE_MS = 50;
 constexpr unsigned long MODE_CHANGE_DELAY_MS = 5000;
 constexpr unsigned long MODE_SCREEN_MS = 3000;
 constexpr const char *CONTROLLER_MODE_KEY = "mode";
-// PV is read every tenth cycle (at most every 5 min), so this allows two
-// missed readings before the inverter temperature is treated as stale.
-constexpr unsigned long PV_TEMPERATURE_MAX_AGE_MS = 15UL * 60UL * 1000UL;
+// PV has its own timer, independent of the heat pump refresh interval, and
+// the first reading is taken right after start.
+constexpr unsigned long PV_READ_INTERVAL_MS = 60UL * 1000UL;
+// A reading the cloud did not accept is sent again at this pace until a newer
+// one replaces it.
+constexpr unsigned long PV_POST_RETRY_MS = 60UL * 1000UL;
+// Allows several missed readings before the inverter temperature is treated
+// as stale.
+constexpr unsigned long PV_TEMPERATURE_MAX_AGE_MS = 5UL * 60UL * 1000UL;
 
 
 
@@ -35,11 +43,13 @@ RTC_DS3231 rtc;
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS_PIN, TFT_DC_PIN, TFT_MOSI_PIN,
   TFT_CLOCK_PIN, TFT_RESET_PIN);
 Telemetry telemetry;
+PvTelemetry pvTelemetry;
 DateTime rtcTime;
 PV pv;
 SerialBus serialBus(Serial);
 OperationController operationController(serialBus, HP_FORCE_ON);
 CloudClient cloudClient;
+AccessPointPolicy accessPointPolicy;
 HeatPumpDataProcessor heatPumpDataProcessor;
 PvDataProcessor pvDataProcessor;
 Preferences devicePreferences;
@@ -48,7 +58,10 @@ Preferences devicePreferences;
 unsigned long lastRefreshAt = -1;
 unsigned long lastTimeSyncAt = 0;
 unsigned long timeSyncInterval = TIME_SYNC_RETRY_INTERVAL;
-uint32_t scheduledReadCount = 0;
+unsigned long lastPvReadAt = -1;
+bool pvPostPending = false;
+bool pvPostRetryWait = false;
+unsigned long lastPvPostAt = 0;
 uint32_t pvCrcErrors = 0;
 uint32_t operationValidationErrors = 0;
 uint32_t cloudResponseParseErrors = 0;
@@ -74,6 +87,8 @@ void respondToSerialRequest(char operation);
 void processSerialInput();
 void reportHeatPumpState(JsonObjectConst hp);
 void postTelemetryToCloud();
+void postPvTelemetryToCloud();
+void schedulePvRead();
 void applyServerOperation(JsonObjectConst operation);
 void scheduleNextDeviceRead();
 void applyControllerOutputs(void);
@@ -109,7 +124,7 @@ void setup()
   timeSyncInterval = timeSynchronized
     ? TIME_SYNC_INTERVAL : TIME_SYNC_RETRY_INTERVAL;
 
-  beginConfigPortal(telemetry);
+  beginConfigPortal(telemetry, pvTelemetry);
   cloudClient.begin();
 }
 
@@ -124,6 +139,9 @@ void loop()
   serialBus.tick();
   cloudClient.tick();
   handleConfigPortal();
+
+  setAccessPointEnabled(accessPointPolicy.update(millis(), stationOnline(),
+    cloudClient.lastRequestAnswered(), cloudClient.lastAnswerAt()));
 
   if (modeScreenShown && millis() - modeScreenAt >= MODE_SCREEN_MS) {
     modeScreenShown = false;
@@ -152,6 +170,16 @@ void loop()
     postTelemetryToCloud();
   }
 
+  if (pvPostPending && serialBus.isIdle()
+    && (!pvPostRetryWait || millis() - lastPvPostAt >= PV_POST_RETRY_MS)) {
+    postPvTelemetryToCloud();
+  }
+
+  if (lastPvReadAt == static_cast<unsigned long>(-1)
+    || millis() - lastPvReadAt >= PV_READ_INTERVAL_MS) {
+    schedulePvRead();
+  }
+
   if (lastRefreshAt == static_cast<unsigned long>(-1)
     || millis() - lastRefreshAt > refreshInterval)
   {
@@ -162,7 +190,7 @@ void loop()
     bool coPump = operationController.coRelay();
     bool cwuPump = operationController.cwuRelay();
 
-    telemetry.updateSnapshot(rtcTime, coPump, cwuPump, pv,
+    telemetry.updateSnapshot(rtcTime, coPump, cwuPump,
       operationController.controllerMode(), prefs);
     telemetry.updateSerialDiagnostics(
       serialBus.queueOverflowCount(), serialBus.readTimeoutCount(),
@@ -292,24 +320,21 @@ void saveControllerMode(ControllerMode mode)
 
 void scheduleNextDeviceRead()
 {
-  bool queued;
-  if (scheduledReadCount % 10 == 0) {
-    queued = serialBus.enqueue(SERIAL_OPERATION::GET_PV_DATA_1);
-    if (queued) {
-      pvDataProcessor.reset();
-      pvFollowUpPending = false;
-    }
-  } else {
-    queued = serialBus.enqueue(SERIAL_OPERATION::GET_HP_DATA);
-    if (queued) {
-      // The previous read got no answer: CHPC is disconnected or restarting
-      // and may have missed commands, so it gets the whole state once back.
-      if (hpReadOutstanding) operationController.heatPumpLost();
-      hpReadOutstanding = true;
-    }
-  }
+  if (!serialBus.enqueue(SERIAL_OPERATION::GET_HP_DATA)) return;
+  // The previous read got no answer: CHPC is disconnected or restarting
+  // and may have missed commands, so it gets the whole state once back.
+  if (hpReadOutstanding) operationController.heatPumpLost();
+  hpReadOutstanding = true;
+}
 
-  if (queued) scheduledReadCount++;
+// A refused request is retried on the next loop, so the timer restarts only
+// once the first block is actually queued.
+void schedulePvRead()
+{
+  if (!serialBus.enqueue(SERIAL_OPERATION::GET_PV_DATA_1)) return;
+  lastPvReadAt = millis();
+  pvDataProcessor.reset();
+  pvFollowUpPending = false;
 }
 
 void processSerialInput()
@@ -362,7 +387,9 @@ void processSerialInput()
       }
       pvReceived = true;
       pvReceivedAt = millis();
-      telemetry.updatePv(pv);
+      pvTelemetry.update(rtc.now(), pv);
+      pvPostPending = true;
+      pvPostRetryWait = false;
       operationController.updatePv(pv);
       applyControllerOutputs();
     }
@@ -399,9 +426,18 @@ void respondToSerialRequest(char operation)
   String data = "";
   switch (operation)
   {
-  case 0x01:
-    serializeJson(telemetry.document(), data);
+  case 0x01: {
+    // The bus reader still gets PV inside the telemetry, as before PV went
+    // to the cloud on its own.
+    JsonDocument response;
+    response.set(telemetry.document());
+    if (pvTelemetry.hasReading()) {
+      response["PV"] = pvTelemetry.document();
+      response["pv_power"] = pvTelemetry.document()["pv_power"];
+    }
+    serializeJson(response, data);
     break;
+  }
   case 0x02: {
     JsonDocument settingsDocument;
     settingsDocument.set(operationController.preferences());
@@ -473,4 +509,14 @@ void postTelemetryToCloud() {
   }  
   
   applyServerOperation(responseDocument["operation"].as<JsonObjectConst>());
+}
+
+// The answer carries no operation, so only its arrival matters: a rejected
+// reading stays pending and is retried after PV_POST_RETRY_MS.
+void postPvTelemetryToCloud()
+{
+  lastPvPostAt = millis();
+  const bool accepted = cloudClient.post("pv/add", pvTelemetry.document()) != "";
+  pvPostPending = !accepted;
+  pvPostRetryWait = !accepted;
 }

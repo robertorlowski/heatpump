@@ -6,10 +6,13 @@ constexpr uint8_t CONTROLLER_DEVICE_ID = 0x10;
 constexpr uint8_t PV_DEVICE_ID = 0x69;
 
 // Hoymiles DTU Modbus map: the microinverter port block starts at 0x1000 and
-// every port occupies 20 registers (40 bytes). One request covers five ports,
-// two requests cover the whole installation. The request encoder and the
-// response parser must derive their addresses from these same constants.
+// every port returns 20 registers (40 bytes). The DTU addresses ports in steps
+// of 0x28, not 20, so a port's start address is 0x1000 + port * 0x28 (checked
+// against the real DTU). One request covers five ports, two requests cover the
+// whole installation. The request encoder and the response parser must derive
+// their addresses from these same constants.
 constexpr uint16_t PV_FIRST_REGISTER = 0x1000;
+constexpr uint8_t PV_ADDRESS_STEP_PER_DEVICE = 0x28;
 constexpr uint8_t PV_REGISTERS_PER_DEVICE = 20;
 constexpr uint8_t PV_BYTES_PER_DEVICE = PV_REGISTERS_PER_DEVICE * 2;
 constexpr uint8_t PV_DEVICES_PER_REQUEST = 5;

@@ -18,9 +18,18 @@ constexpr uint16_t RESPONSE_TIMEOUT_MS = 5000;
 // costs one blocked request a minute instead of stalling every loop.
 constexpr unsigned long REGISTRATION_RETRY_MS = 60000;
 
-String deviceQuery()
+String rootIdQuery()
 {
   return String("rootId=") + deviceConfig().rootId;
+}
+
+// The serial always goes along: the server resolves the device from it when
+// there is no rootId yet and rejects a rootId that belongs to another serial.
+String deviceQuery()
+{
+  String query = String("deviceId=") + deviceSerial();
+  if (deviceRegistered()) query += String("&") + rootIdQuery();
+  return query;
 }
 
 String cloudUrl(const String &normalizedPath)
@@ -28,6 +37,9 @@ String cloudUrl(const String &normalizedPath)
   const char separator = normalizedPath.indexOf('?') >= 0 ? '&' : '?';
   return String(CLOUD_BASE_URL) + normalizedPath + separator + deviceQuery();
 }
+
+// The server answers a rootId that does not match the serial with 409.
+constexpr int HTTP_CONFLICT = 409;
 }
 
 CloudClient *CloudClient::instance = nullptr;
@@ -42,7 +54,7 @@ void CloudClient::begin()
 // it only once the registration has produced one.
 void CloudClient::startWebSocket()
 {
-  String webSocketPath = String("/ws?") + deviceQuery();
+  String webSocketPath = String("/ws?") + rootIdQuery();
   webSocket.beginSSL(CLOUD_HOST, 443, webSocketPath.c_str());
   webSocket.onEvent(handleWebSocketEvent);
   webSocket.setReconnectInterval(10000);
@@ -104,24 +116,39 @@ bool CloudClient::takeOperationRequest()
 
 String CloudClient::post(const String &path, const JsonDocument &data)
 {
-  // Without a rootId the server would file the data under its default device.
-  if (!deviceRegistered()) return "";
+  // Without a rootId the serial alone identifies the controller, so only a
+  // controller that cannot read its own MAC has nothing to send with.
+  if (!deviceRegistered() && deviceSerial().length() == 0) return "";
 
   String normalizedPath = path;
   while (normalizedPath.startsWith("/")) normalizedPath.remove(0, 1);
-  return send(cloudUrl(normalizedPath), data);
+  String response = send(cloudUrl(normalizedPath), data);
+
+  if (httpStatus == HTTP_CONFLICT && deviceRegistered()) {
+    // The stored rootId belongs to another device. Forgetting it lets the
+    // registration fetch the right one; the WebSocket reopens with it.
+    clearRootId();
+    registrationAttempted = false;
+    if (webSocketStarted) {
+      webSocket.disconnect();
+      webSocketStarted = false;
+    }
+  }
+  return response;
 }
 
 String CloudClient::send(const String &url, const JsonDocument &data)
 {
   if (WiFi.status() != WL_CONNECTED) {
     httpStatus = 0;
+    answered = false;
     requestErrors++;
     return "";
   }
 
   if (!http.begin(url)) {
     httpStatus = 0;
+    answered = false;
     requestErrors++;
     return "";
   }
@@ -133,6 +160,9 @@ String CloudClient::send(const String &url, const JsonDocument &data)
   String payload;
   serializeJson(data, payload);
   httpStatus = http.POST(payload);
+  // HTTPClient reports connection and timeout failures as negative codes.
+  answered = httpStatus > 0;
+  if (answered) answeredAt = millis();
 
   String response;
   if (httpStatus >= 200 && httpStatus < 300) {
@@ -147,6 +177,16 @@ String CloudClient::send(const String &url, const JsonDocument &data)
 int CloudClient::lastHttpStatus() const
 {
   return httpStatus;
+}
+
+bool CloudClient::lastRequestAnswered() const
+{
+  return answered;
+}
+
+unsigned long CloudClient::lastAnswerAt() const
+{
+  return answeredAt;
 }
 
 uint32_t CloudClient::requestErrorCount() const

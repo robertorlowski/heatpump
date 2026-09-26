@@ -7,12 +7,13 @@
 namespace {
 WebServer server(80);
 const Telemetry *telemetrySource = nullptr;
+const PvTelemetry *pvTelemetrySource = nullptr;
 bool running = false;
 bool restartRequested = false;
 unsigned long restartRequestedAt = 0;
 
-// Open view on /. The page pulls /telemetry.json so the firmware only has
-// to serialise the document it already keeps.
+// Open view on /. The page pulls /telemetry.json and /pv.json so the
+// firmware only has to serialise the documents it already keeps.
 const char TELEMETRY_PAGE[] PROGMEM = R"VIEW(<!DOCTYPE html>
 <html lang="pl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -46,13 +47,14 @@ a{color:#4db6a0}
 <h1>Sterownik CO</h1><p id="stamp">wczytywanie...</p>
 <div id="out"></div>
 <footer><a href="/install">Konfiguracja</a> &middot;
-<a href="/telemetry.json">JSON</a></footer>
+<a href="/telemetry.json">JSON</a> &middot;
+<a href="/pv.json">PV JSON</a></footer>
 </div><script>
 var L={co_pomp:"Pompa CO",cwu_pomp:"Pompa CWU",pv_power:"Produkcja PV",
 controller_mode:"Tryb",work_mode:"Praca",co_min:"CO min",co_max:"CO max",
 cwu_min:"CWU min",cwu_max:"CWU max",t_min:"T pocz.",t_max:"T konc.",
 cop:"COP",cop_min:"COP min",cop_max:"COP max",cop_bottom_start:"T dolu",
-total_power:"Moc",total_prod_today:"Dziś",total_prod:"Razem",
+total_power:"Moc",total_prod_today:"Dziś",total_prod:"Razem",time:"Odczyt",
 temperature:"Temp.",Tho:"T góra",Ttarget:"T środek",Tmin:"T min",Tmax:"T max",
 Tbe:"T przed",Tae:"T za",Tsump:"T miski",EEV:"EEV",EEV_dt:"EEV dt",
 EEV_pos:"EEV poz.",EEVmax:"EEV max",EEVmin:"EEV min",Watts:"Moc",HCS:"Ob. gorący",CCS:"Ob. zimny",
@@ -67,7 +69,7 @@ var DIAG=["cloud_http_status","cloud_request_error","websocket_disconnect",
 "cloud_response_parse_error","serial_queue_overflow","serial_read_timeout",
 "serial_receive_overflow","pv_crc_error","hp_json_error","pv_frame_error",
 "operation_validation_error","preference_validation_error"];
-var MAIN=["controller_mode","work_mode","co_pomp","cwu_pomp","pv_power",
+var MAIN=["controller_mode","work_mode","co_pomp","cwu_pomp",
 "co_min","co_max","cwu_min","cwu_max"];
 var COP=["t_min","t_max","cop","cop_min","cop_max","cop_bottom_start"];
 function lab(k){return L[k]||k}
@@ -94,30 +96,36 @@ function kwh(v){return typeof v==="number"?(v/1000).toFixed(1):val(v)}
 function panels(list){
   if(!list||!list.length)return "";
   var h="<thead><tr><th>Nr seryjny</th><th>Port</th><th>W</th>"+
-    "<th>Wh dziś</th><th>kWh</th><th>C</th></tr></thead><tbody>";
+    "<th>V</th><th>A</th><th>Wh dziś</th><th>kWh</th><th>C</th>"+
+    "<th>Sieć V</th><th>Hz</th><th>Alarm</th></tr></thead><tbody>";
   list.forEach(function(p){
     var s=val(p.serial);
     h+='<tr><td title="'+esc(s)+'">'+esc(s.length>6?s.slice(-6):s)+
       "</td><td>"+esc(val(p.port))+"</td><td>"+esc(val(p.power))+
+      "</td><td>"+esc(val(p.pv_voltage))+"</td><td>"+esc(val(p.pv_current))+
       "</td><td>"+esc(val(p.prod_today))+"</td><td>"+esc(kwh(p.prod_total))+
-      "</td><td>"+esc(val(p.temperature))+"</td></tr>";
+      "</td><td>"+esc(val(p.temperature))+"</td><td>"+esc(val(p.grid_voltage))+
+      "</td><td>"+esc(val(p.grid_frequency))+"</td><td>"+esc(val(p.alarm_code))+
+      "</td></tr>";
   });
   return '<div class="tw"><table>'+h+"</tbody></table></div>";
 }
-function render(d){
+function render(d,pv){
   document.getElementById("stamp").textContent=d.time||"brak znacznika czasu";
-  var pv=d.PV||{},hp=d.HP||{},o="";
+  var hp=d.HP||{},o="";
   o+=sec("Sterownik",grid(d,MAIN));
   o+=sec("Pompa ciepła",grid(hp,null,true));
   o+=sec("Cykl i COP",grid(d,COP));
   o+=sec("Diagnostyka",grid(d,DIAG));
-  o+=sec("Fotowoltaika",grid(pv,["total_power","total_prod_today",
-    "total_prod","temperature"])+panels(pv.panels));
+  o+=sec("Fotowoltaika",grid(pv,["pv_power","total_power","total_prod_today",
+    "total_prod","temperature","time"])+panels(pv.panels));
   document.getElementById("out").innerHTML=o||"<p>Brak danych.</p>";
 }
+function load(u){return fetch(u,{cache:"no-store"}).then(function(r){
+  return r.json()})}
 function tick(){
-  fetch("/telemetry.json",{cache:"no-store"}).then(function(r){
-    return r.json()}).then(render).catch(function(){
+  Promise.all([load("/telemetry.json"),load("/pv.json")]).then(function(a){
+    render(a[0],a[1])}).catch(function(){
     document.getElementById("stamp").textContent="brak połączenia"});
 }
 tick();setInterval(tick,5000);
@@ -235,6 +243,19 @@ void handleTelemetryJson()
   server.send(200, "application/json; charset=utf-8", payload);
 }
 
+void handlePvJson()
+{
+  // Before the first reading the document is empty and serialises as null.
+  if (pvTelemetrySource == nullptr || !pvTelemetrySource->hasReading()) {
+    server.send(200, "application/json; charset=utf-8", "{}");
+    return;
+  }
+
+  String payload;
+  serializeJson(pvTelemetrySource->document(), payload);
+  server.send(200, "application/json; charset=utf-8", payload);
+}
+
 void handleInstall()
 {
   if (!authorized()) return;
@@ -266,13 +287,16 @@ void handleSave()
 }
 }
 
-void beginConfigPortal(const Telemetry &telemetry)
+void beginConfigPortal(const Telemetry &telemetry,
+  const PvTelemetry &pvTelemetry)
 {
   if (running) return;
 
   telemetrySource = &telemetry;
+  pvTelemetrySource = &pvTelemetry;
   server.on("/", HTTP_GET, handleTelemetryPage);
   server.on("/telemetry.json", HTTP_GET, handleTelemetryJson);
+  server.on("/pv.json", HTTP_GET, handlePvJson);
   server.on("/install", HTTP_GET, handleInstall);
   server.on("/save", HTTP_POST, handleSave);
   server.onNotFound([]() {

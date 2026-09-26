@@ -12,6 +12,16 @@ struct PvPanel {
   uint32_t prod_today = 0;        // Wh
   uint32_t prod_total = 0;        // Wh
   float temperature = 0.0f;       // degrees Celsius
+  float pv_voltage = 0.0f;        // V, panel side
+  float pv_current = 0.0f;        // A, panel side
+  float grid_voltage = 0.0f;      // V
+  float grid_frequency = 0.0f;    // Hz
+  // Status, alarm and link are passed on raw: their codes are not documented
+  // and a working installation reports 3, 0, 0 and 1.
+  uint16_t status = 0;
+  uint16_t alarm_code = 0;
+  uint16_t alarm_count = 0;
+  uint8_t link = 0;
 };
 
 struct PV {

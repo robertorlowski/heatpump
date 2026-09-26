@@ -7,17 +7,15 @@
 Telemetry::Telemetry()
 {
   data["HP"].to<JsonObject>();
-  data["PV"].to<JsonObject>();
 }
 
+// PV is not part of it: PvTelemetry goes to pv/add on its own schedule.
 void Telemetry::updateSnapshot(const DateTime &time, bool coPump, bool cwuPump,
-  const PV &pv, ControllerMode controllerMode,
-  const DeviceSettings &settings)
+  ControllerMode controllerMode, const DeviceSettings &settings)
 {
   data["time"] = time;
   data["co_pomp"] = coPump;
   data["cwu_pomp"] = cwuPump;
-  data["pv_power"] = pv.pv_power;
   data["controller_mode"] = controllerMode;
   data["work_mode"] = settings.workMode;
   data["co_min"] = settings.coMin;
@@ -52,12 +50,6 @@ void Telemetry::updateOperationDiagnostics(
 {
   data["operation_validation_error"] = operationValidationError;
   data["preference_validation_error"] = preferenceValidationError;
-}
-
-void Telemetry::updatePv(const PV &pv)
-{
-  data["pv_power"] = pv.pv_power;
-  data["PV"] = pv;
 }
 
 void Telemetry::updateHeatPump(const HeatPumpDataUpdate &update)

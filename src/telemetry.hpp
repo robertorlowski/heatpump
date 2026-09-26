@@ -11,8 +11,7 @@ public:
   Telemetry();
 
   void updateSnapshot(const DateTime &time, bool coPump, bool cwuPump,
-    const PV &pv, ControllerMode controllerMode,
-    const DeviceSettings &settings);
+    ControllerMode controllerMode, const DeviceSettings &settings);
   void updateSerialDiagnostics(uint32_t queueOverflow, uint32_t readTimeout,
     uint32_t receiveOverflow, uint32_t pvCrcError, uint32_t hpJsonError,
     uint32_t pvFrameError);
@@ -20,7 +19,6 @@ public:
     uint32_t webSocketDisconnect, uint32_t responseParseError);
   void updateOperationDiagnostics(uint32_t operationValidationError,
     uint32_t preferenceValidationError);
-  void updatePv(const PV &pv);
   void updateHeatPump(const HeatPumpDataUpdate &update);
   void updateControllerState(bool coPump, bool cwuPump,
     ControllerMode controllerMode, const DeviceSettings &settings);

@@ -17,6 +17,9 @@ public:
   void registerDevice();
   String post(const String &path, const JsonDocument &data);
   int lastHttpStatus() const;
+  // Any HTTP status, errors included, proves the internet is reachable.
+  bool lastRequestAnswered() const;
+  unsigned long lastAnswerAt() const;
   uint32_t requestErrorCount() const;
   uint32_t webSocketDisconnectCount() const;
 
@@ -36,6 +39,8 @@ private:
   unsigned long lastRegistrationAt = 0;
   unsigned long lastWifiReconnectAt = 0;
   int httpStatus = 0;
+  bool answered = false;
+  unsigned long answeredAt = 0;
   uint32_t requestErrors = 0;
   uint32_t webSocketDisconnects = 0;
 };

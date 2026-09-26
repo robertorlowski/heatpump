@@ -79,7 +79,7 @@ void testFrameIsParsedIntoPanelsAndSums()
   TEST_ASSERT_EQUAL_INT64(312 + 298 + 190 + 200, pv.total_power);
   TEST_ASSERT_EQUAL_UINT64(870 + 810 + 540 + 560, pv.total_prod_today);
   TEST_ASSERT_EQUAL_UINT64(521340 + 498120 + 310500 + 320000, pv.total_prod);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 30.0f, pv.temperature);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 28.5f, pv.temperature);
 
   TEST_ASSERT_EQUAL_UINT8(4, pv.panel_count);
   TEST_ASSERT_EQUAL_STRING("114172035403", pv.panels[0].inverter_serial);
@@ -131,8 +131,65 @@ void testNegativeTemperatureIsReadAsSigned()
 
   PV pv;
   TEST_ASSERT_TRUE(processor.complete(pv, 2000));
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, -5.0f, pv.temperature);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, -5.5f, pv.temperature);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, -5.5f, pv.panels[0].temperature);
+}
+
+void testRealDtuRecordIsDecodedCompletely()
+{
+  // Port 1 of inverter 116491036767, read from the DTU on 2026-09-26.
+  const uint8_t record[PV_BYTES_PER_DEVICE] = {
+    0x0C, 0x11, 0x64, 0x91, 0x03, 0x67, 0x67, 0x01, 0x01, 0x68,
+    0x03, 0x86, 0x09, 0x4C, 0x13, 0x8A, 0x0C, 0xB4, 0x02, 0xE2,
+    0x00, 0x10, 0x13, 0x2C, 0x01, 0x4E, 0x00, 0x03, 0x00, 0x00,
+    0x00, 0x00, 0x01, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  };
+  uint8_t frame[HEADER_LENGTH + PV_BYTES_PER_DEVICE] = {
+    PV_DEVICE_ID, 0x03, PV_BYTES_PER_DEVICE};
+  memcpy(frame + HEADER_LENGTH, record, sizeof(record));
+
+  PvDataProcessor processor;
+  TEST_ASSERT_TRUE(processor.appendFrame(frame, sizeof(frame)));
+  TEST_ASSERT_TRUE(processor.appendFrame(frame, sizeof(frame)));
+
+  PV pv;
+  TEST_ASSERT_TRUE(processor.complete(pv, 2000));
+  const PvPanel &panel = pv.panels[0];
+  TEST_ASSERT_EQUAL_STRING("116491036767", panel.inverter_serial);
+  TEST_ASSERT_EQUAL_UINT8(1, panel.port);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 36.0f, panel.pv_voltage);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 9.02f, panel.pv_current);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 238.0f, panel.grid_voltage);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 50.02f, panel.grid_frequency);
+  TEST_ASSERT_EQUAL_INT32(325, panel.power);
+  TEST_ASSERT_EQUAL_UINT32(738, panel.prod_today);
+  TEST_ASSERT_EQUAL_UINT32(1053484, panel.prod_total);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 33.4f, panel.temperature);
+  TEST_ASSERT_EQUAL_UINT16(3, panel.status);
+  TEST_ASSERT_EQUAL_UINT16(0, panel.alarm_code);
+  TEST_ASSERT_EQUAL_UINT16(0, panel.alarm_count);
+  TEST_ASSERT_EQUAL_UINT8(1, panel.link);
+
+  // Voltage times current agrees with the power the DTU reports.
+  TEST_ASSERT_FLOAT_WITHIN(1.0f, 325.0f, panel.pv_voltage * panel.pv_current);
+}
+
+void testImplausiblyHighPortTemperatureIsIgnored()
+{
+  const PvRecord records[] = {
+    {"114172035403", 1, 0, 0, 0, 215},
+    {"114172035403", 2, 0, 0, 0, 32000},
+  };
+
+  uint8_t frame[256];
+  PvDataProcessor processor;
+  const size_t length = buildFrame(frame, records, 2);
+  TEST_ASSERT_TRUE(processor.appendFrame(frame, length));
+  TEST_ASSERT_TRUE(processor.appendFrame(frame, length));
+
+  PV pv;
+  TEST_ASSERT_TRUE(processor.complete(pv, 2000));
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 21.5f, pv.temperature);
 }
 
 void testMalformedFramesAreRejected()
@@ -227,6 +284,8 @@ int runAllTests()
   RUN_TEST(testFrameIsParsedIntoPanelsAndSums);
   RUN_TEST(testRecordCountComesFromTheByteCountField);
   RUN_TEST(testNegativeTemperatureIsReadAsSigned);
+  RUN_TEST(testRealDtuRecordIsDecodedCompletely);
+  RUN_TEST(testImplausiblyHighPortTemperatureIsIgnored);
   RUN_TEST(testMalformedFramesAreRejected);
   RUN_TEST(testCompleteRequiresEveryExpectedFrame);
   RUN_TEST(testPvPowerFollowsTheForceThreshold);

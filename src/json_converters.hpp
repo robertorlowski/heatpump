@@ -14,6 +14,7 @@ struct Converter<PV> {
     destination["total_prod"] = source.total_prod;
     destination["total_prod_today"] = source.total_prod_today;
     destination["temperature"] = source.temperature;
+    destination["pv_power"] = source.pv_power;
 
     JsonArray panels = destination["panels"].to<JsonArray>();
     for (uint8_t index = 0; index < source.panel_count; index++) {
@@ -29,6 +30,14 @@ struct Converter<PV> {
       panel["prod_today"] = reading.prod_today;
       panel["prod_total"] = reading.prod_total;
       panel["temperature"] = reading.temperature;
+      panel["pv_voltage"] = reading.pv_voltage;
+      panel["pv_current"] = reading.pv_current;
+      panel["grid_voltage"] = reading.grid_voltage;
+      panel["grid_frequency"] = reading.grid_frequency;
+      panel["status"] = reading.status;
+      panel["alarm_code"] = reading.alarm_code;
+      panel["alarm_count"] = reading.alarm_count;
+      panel["link"] = reading.link;
     }
     return true;
   }

@@ -15,5 +15,9 @@ void renderDashboard(Adafruit_ST7735 &display, bool coOn,
   const DateTime &rtcTime, const JsonDocument &telemetry,
   ControllerMode controllerMode, WORK_MODE workMode, const PV &pv,
   bool pvTemperatureCurrent, const DeviceSettings &settings);
+// Connected to the configured network and holding an address.
+bool stationOnline();
+bool accessPointEnabled();
+void setAccessPointEnabled(bool enabled);
 void writeRelayOutput(Adafruit_ST7735 &display, uint8_t pin, uint8_t value);
 void writeSerialResponse(const String &text);

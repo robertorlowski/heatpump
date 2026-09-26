@@ -36,7 +36,10 @@ bool PvDataProcessor::appendFrame(const uint8_t *data, size_t length)
   const uint8_t deviceCount = payloadLength / PV_BYTES_PER_DEVICE;
 
   // Offsets are absolute: Modbus header plus the offset inside the 40-byte
-  // Hoymiles port record (power 16, today 18, total 20, temperature 24).
+  // Hoymiles port record (PV voltage 8, PV current 10, grid voltage 12, grid
+  // frequency 14, power 16, today 18, total 20, temperature 24, status 26,
+  // alarm code 28, alarm count 30, link 32). Checked against a real DTU:
+  // voltage times current matches the reported power.
   for (uint8_t device = 0; device < deviceCount; device++) {
     const int32_t power =
       static_cast<int32_t>(readUnsigned(data, device, 19, 2)) / 10;
@@ -49,7 +52,11 @@ bool PvDataProcessor::appendFrame(const uint8_t *data, size_t length)
     accumulated.total_power += power;
     accumulated.total_prod_today += prodToday;
     accumulated.total_prod += prodTotal;
-    accumulated.temperature += temperature;
+    // The lowest port reading is reported: a single faulty port can return
+    // an implausibly high value that would dominate an average.
+    if (temperatureSampleCount == 0 || temperature < accumulated.temperature) {
+      accumulated.temperature = temperature;
+    }
     temperatureSampleCount++;
 
     // Both responses arrive in port order, so panels are appended as they come.
@@ -63,6 +70,14 @@ bool PvDataProcessor::appendFrame(const uint8_t *data, size_t length)
       panel.prod_today = prodToday;
       panel.prod_total = prodTotal;
       panel.temperature = temperature;
+      panel.pv_voltage = readUnsigned(data, device, 11, 2) / 10.0f;
+      panel.pv_current = readUnsigned(data, device, 13, 2) / 100.0f;
+      panel.grid_voltage = readUnsigned(data, device, 15, 2) / 10.0f;
+      panel.grid_frequency = readUnsigned(data, device, 17, 2) / 100.0f;
+      panel.status = static_cast<uint16_t>(readUnsigned(data, device, 29, 2));
+      panel.alarm_code = static_cast<uint16_t>(readUnsigned(data, device, 31, 2));
+      panel.alarm_count = static_cast<uint16_t>(readUnsigned(data, device, 33, 2));
+      panel.link = static_cast<uint8_t>(readUnsigned(data, device, 35, 1));
     }
   }
 
@@ -77,7 +92,6 @@ bool PvDataProcessor::complete(PV &result, int64_t forceThreshold) const
   }
 
   result = accumulated;
-  result.temperature /= static_cast<float>(temperatureSampleCount);
   result.pv_power = result.total_power >= forceThreshold;
   return true;
 }

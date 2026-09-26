@@ -28,16 +28,24 @@ Testy E2E z `chpc` szukają tego repozytorium w katalogu `../heatpump` obok
 ## Co robi sterownik
 
 - **Odczyty.** Co 10 s, gdy sprężarka pracuje, i co 30 s w spoczynku, odpytuje
-  pompę (JSON), a co dziesiąty cykl DTU Hoymiles (Modbus, dwa zapytania po pięć
-  portów). Szacuje COP zbiornika w każdym cyklu grzania.
-- **Chmura.** Wysyła telemetrię przez `POST /api/hp/add` i w odpowiedzi dostaje
-  obiekt `operation`. Komunikat WebSocket `operation` przyspiesza tę wymianę.
-  Zmienione ustawienia trafiają do pompy jako komendy RS-485. Komenda, której
-  efektywna wartość się nie zmieniła, nie jest wysyłana ponownie.
-- **Rejestracja.** Sterownik bez Root ID po połączeniu z internetem rejestruje
-  się przez `POST /api/devices/register` swoim SN, czyli fabrycznym MAC układu,
+  pompę (JSON). Niezależnie od tego co 60 s i zaraz po starcie odpytuje DTU
+  Hoymiles (Modbus, dwa zapytania po pięć portów, od 0x1000 i od 0x10C8).
+  Szacuje COP zbiornika w każdym cyklu grzania.
+- **Chmura.** Wysyła telemetrię pompy przez `POST /api/hp/add` i w odpowiedzi
+  dostaje obiekt `operation`. Komunikat WebSocket `operation` przyspiesza tę
+  wymianę. Zmienione ustawienia trafiają do pompy jako komendy RS-485. Komenda,
+  której efektywna wartość się nie zmieniła, nie jest wysyłana ponownie. Odczyt
+  PV (podsumowanie i wszystkie porty: moc, napięcia, prąd, częstotliwość sieci,
+  temperatura, alarmy) idzie osobno przez `POST /api/pv/add`.
+- **Rejestracja.** Każde żądanie niesie SN (`deviceId`), czyli fabryczny MAC
+  układu, a Root ID tylko wtedy, gdy jest zapisany. Sterownik bez Root ID po
+  połączeniu z internetem rejestruje się przez `POST /api/devices/register`
   i zapisuje otrzymany Root ID w NVS. Znany SN dostaje z powrotem swój
-  dotychczasowy Root ID. Do czasu rejestracji telemetria nie jest wysyłana.
+  dotychczasowy Root ID. Gdy serwer odpowie 409 (Root ID należy do innego SN),
+  sterownik kasuje Root ID i rejestruje się ponownie.
+- **Punkt dostępowy** `HP-CO-setup` startuje razem ze sterownikiem i jest
+  wyłączany po 3 min stabilnego dostępu do chmury; wraca po 1 min bez Wi-Fi
+  albo po 5 min bez odpowiedzi chmury.
 - **Tryby.** Przycisk na GPIO5 przełącza tryb sterownika
   `OFF → CLOUD → MANUAL_CO → MANUAL_CWU → OFF`. Pierwsze naciśnięcie tylko
   pokazuje bieżący tryb, każde kolejne przechodzi do następnego. Tryb jest
@@ -45,12 +53,13 @@ Testy E2E z `chpc` szukają tego repozytorium w katalogu `../heatpump` obok
   `work_mode` z chmury (`M`, `A`, `PV`, `CWU`, `OFF`). Pełna semantyka trybów:
   [docs/server-driven-refactor-2026-09-20.md](docs/server-driven-refactor-2026-09-20.md#6-semantyka-trybów).
 - **Strony WWW na porcie 80**, w sieci lokalnej i na własnym, otwartym punkcie
-  dostępowym `HP-CO-setup`:
+  dostępowym `HP-CO-setup`, gdy jest włączony:
 
   | Adres | Dostęp | Zawartość |
   |---|---|---|
   | `/` | otwarty | podgląd telemetrii, odświeżany co 5 s |
-  | `/telemetry.json` | otwarty | dokument telemetrii |
+  | `/telemetry.json` | otwarty | telemetria pompy |
+  | `/pv.json` | otwarty | ostatni odczyt PV z panelami |
   | `/install` | hasło (`admin`) | Wi-Fi, SN i Root ID (tylko do odczytu), status rejestracji |
   | `/save` | hasło | zapis Wi-Fi i restart |
 
@@ -103,6 +112,7 @@ pio test -e native
 | [test_operation_controller](test/test_operation_controller/test_main.cpp) | scalanie operacji z chmury, tryby, reguły `OFF` i `AUTO_PV`, brak powtórnych komend |
 | [test_pv_data_processor](test/test_pv_data_processor/test_main.cpp) | parser odpowiedzi Modbus z DTU Hoymiles |
 | [test_modbus_frame](test/test_modbus_frame/test_main.cpp) | kodowanie ramek RS-485 i CRC |
+| [test_access_point_policy](test/test_access_point_policy/test_main.cpp) | kiedy wyłączyć i włączyć punkt dostępowy `HP-CO-setup` |
 
 **E2E całego łańcucha** (chpc ⇄ RS-485 ⇄ co ⇄ chpc-web ⇄ przeglądarka) są
 w repozytorium `chpc`, w katalogu `test/e2e/`, razem z instrukcją i raportem.

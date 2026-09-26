@@ -171,8 +171,9 @@ void testPvReadsCoverConsecutiveRegisterBlocks()
   TEST_ASSERT_EQUAL_UINT16(
     PV_DEVICES_PER_REQUEST * PV_REGISTERS_PER_DEVICE, firstCount);
 
-  // The second block starts where the first one ends, counted in registers.
-  TEST_ASSERT_EQUAL_UINT16(firstStart + firstCount, secondStart);
+  // The DTU addresses ports in steps of 0x28, so the sixth port starts at
+  // 0x10C8. Starting at 0x1064 lands mid-record and yields garbage values.
+  TEST_ASSERT_EQUAL_HEX16(0x10C8, secondStart);
   TEST_ASSERT_EQUAL_UINT16(firstCount, secondCount);
 
   // Function code 3 is limited to 125 registers per request.

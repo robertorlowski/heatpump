@@ -101,3 +101,15 @@ bool saveRootId(const String &rootId)
   if (stored) config.rootId = rootId;
   return stored;
 }
+
+void clearRootId()
+{
+  Preferences preferences;
+  if (preferences.begin(PREFERENCES_NAMESPACE, false)) {
+    preferences.remove(KEY_ROOT_ID);
+    preferences.end();
+  }
+  // Also drops a CLOUD_ROOT_ID default until the next restart; if that one
+  // is wrong too, the server rejects it again and the cycle repeats once.
+  config.rootId = "";
+}

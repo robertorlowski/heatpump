@@ -42,7 +42,8 @@ size_t encodePvRead(SERIAL_OPERATION operation, uint8_t *buffer)
   constexpr uint16_t blockRegisters =
     PV_DEVICES_PER_REQUEST * PV_REGISTERS_PER_DEVICE;
   const uint16_t start = operation == GET_PV_DATA_1
-    ? PV_FIRST_REGISTER : PV_FIRST_REGISTER + blockRegisters;
+    ? PV_FIRST_REGISTER
+    : PV_FIRST_REGISTER + PV_DEVICES_PER_REQUEST * PV_ADDRESS_STEP_PER_DEVICE;
 
   buffer[0] = PV_DEVICE_ID;
   buffer[1] = 0x03;

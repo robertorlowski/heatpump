@@ -91,8 +91,9 @@ bool initializeDevice(RTC_DS3231 &rtc, Adafruit_ST7735 &display)
   const DeviceConfig &config = deviceConfig();
   displayStatus(display, "WIFI connecting...");
 
-  // The controller always runs its own open network, so the configuration
-  // page stays reachable no matter what happens to the configured Wi-Fi.
+  // The controller starts its own open network, so the configuration page is
+  // reachable no matter what happens to the configured Wi-Fi. The main loop
+  // switches it off once AccessPointPolicy sees stable internet access.
   // softAP() enables the access point on top of the station mode.
   WiFi.mode(WIFI_AP_STA);
   WiFi.persistent(false);
@@ -170,10 +171,37 @@ void displayControllerMode(Adafruit_ST7735 &display,
   else
     display.printf("Error WIFI");
 
-  // The access point is always up, so its address is the way back to the
-  // configuration page exactly when the configured network is unavailable.
+  // The access point comes back whenever the configured network fails, so
+  // its address is the way to the configuration page exactly then.
   display.setCursor(10, 150);
-  display.printf("AP: %s", WiFi.softAPIP().toString().c_str());
+  if (accessPointEnabled())
+    display.printf("AP: %s", WiFi.softAPIP().toString().c_str());
+  else
+    display.printf("AP: off");
+}
+
+bool stationOnline()
+{
+  return WiFi.status() == WL_CONNECTED
+    && WiFi.localIP() != IPAddress(0, 0, 0, 0);
+}
+
+bool accessPointEnabled()
+{
+  return (WiFi.getMode() & WIFI_MODE_AP) != 0;
+}
+
+void setAccessPointEnabled(bool enabled)
+{
+  if (enabled == accessPointEnabled()) return;
+  if (enabled) {
+    // The station keeps its connection; the access point joins its channel.
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(CONFIG_AP_SSID);
+  } else {
+    // wifioff = true drops the AP interface and leaves the station mode.
+    WiFi.softAPdisconnect(true);
+  }
 }
 
 void writeRelayOutput(Adafruit_ST7735 &display, uint8_t pin, uint8_t value)

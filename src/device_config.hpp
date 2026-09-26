@@ -36,3 +36,6 @@ const String &deviceSerial();
 // Stores the Wi-Fi fields only; the rootId is owned by the registration.
 bool saveWifiConfig(const String &ssid, const String &password);
 bool saveRootId(const String &rootId);
+// Forgets a rootId the server does not match with this serial, so the
+// controller registers again.
+void clearRootId();
